@@ -1,0 +1,9 @@
+[package]
+name = "masswhois"
+version = "0.1.0"
+authors = ["B. Blechschmidt <blechschmidt@users.noreply.github.com>"]
+
+[dependencies]
+mio = "0.6"
+netbuf = "0.4.0"
+byteorder = "1.0.0"
