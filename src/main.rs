@@ -2,6 +2,9 @@ extern crate mio;
 extern crate netbuf;
 extern crate byteorder;
 
+#[macro_use]
+extern crate bitflags;
+
 use std::env;
 use mio::{Token, Poll, Ready, PollOpt, Events};
 use mio::tcp::TcpStream;
@@ -19,7 +22,19 @@ enum WhoisQuery {
 	Domain(String),
 	IpAddr(IpAddr),
 	AS(u32),
-	Unknown(String)
+	Unspecified(String)
+}
+
+bitflags! {
+	struct IpSupport: u8 {
+		const IP_V4 = 1;
+		const IP_V6 = 2;
+	}
+}
+
+struct IpConfig {
+	defaultVersion: IpSupport,
+	supportedVersions: IpSupport
 }
 
 impl WhoisQuery {
@@ -66,12 +81,22 @@ impl WhoisClient {
 }
 
 struct WhoisDatabase {
-	domain_servers : HashMap<String, Option<String>>, // map domain to whois server
+	domain_servers : HashMap<String, String>, // map domain to whois server
 	server_ips : HashMap<String, (Vec<Ipv4Addr>, Vec<Ipv6Addr>)> // map whois server name to addresses
 }
 
 impl WhoisDatabase {
-	fn read_domain_servers(&mut self, filename : String) {
+	fn new(domain_server_file: &String, server_ip_file: &String) -> WhoisDatabase {
+		let mut result = WhoisDatabase {
+			domain_servers: Default::default(),
+			server_ips: Default::default()
+		};
+		result.read_domain_servers(domain_server_file);
+		result.read_server_ips(server_ip_file);
+		result
+	}
+
+	fn read_domain_servers(&mut self, filename : &String) {
 		let reader = BufReader::new(File::open(filename).unwrap());
 		for l in reader.lines() {
 			let trimmed : String = String::from(l.unwrap());
@@ -81,11 +106,13 @@ impl WhoisDatabase {
 			let mut fields = trimmed.split_whitespace();
 			let domain = String::from(fields.next().unwrap()).to_lowercase();
 			let server = fields.next().map(|x| String::from(x).to_lowercase());
-			self.domain_servers.insert(domain, server);
+			if server.is_some() {
+				self.domain_servers.insert(domain, server.unwrap());
+			}
 		}
 	}
 	
-	fn read_server_ips(&mut self, filename : String) {
+	fn read_server_ips(&mut self, filename : &String) {
 		let reader = BufReader::new(File::open(filename).unwrap());
 		for l in reader.lines() {
 			let trimmed : String = String::from(l.unwrap());
@@ -107,8 +134,44 @@ impl WhoisDatabase {
 		}
 	}
 
-	fn get_server(self, query : WhoisQuery) {
+	fn get_server<'a>(&'a self, query : &'a WhoisQuery) -> Option<&'a String> {
+		match *query {
+			WhoisQuery::Domain(ref x) => 
+			{
+				let full = self.domain_servers.get(x);
+				if full.is_some() {
+					return full;
+				}
+				for (pos, ch) in x.char_indices() {
+					if ch == '.' {
+						let part = &x.as_str()[pos + 1..];
+						println!("{}", part);
+						let result = self.domain_servers.get(&String::from(part));
+						if result.is_some() {
+							return result;
+						}
+					}
+				}
+				None
+			}
+			// TODO: Implement other types
+			_ => None
+		}
+	}
 
+	fn get_server_ip<'a>(&'a self, try: usize, server: Option<&'a String>, ip_conf: &IpConfig) -> Option<IpAddr> {
+		if server.is_none() {
+			None
+		} else{
+			let server_str = server.unwrap();
+			let ips = self.server_ips.get(server_str);
+			if ips.is_some() {
+				let &(ref ip4, ref ip6) = ips.unwrap();
+				// TODO: Use ip_config and try
+				return Some(IpAddr::V4(ip4[0]));
+			}
+			None
+		}
 	}
 
 }
@@ -234,6 +297,13 @@ impl<'a> MassWhois<'a> {
 
 
 fn main() {
+	/*let db = WhoisDatabase::new(&String::from("data/domain_servers.txt"), &String::from("data/server_ip.txt"));
+	let q = WhoisQuery::Domain(String::from("yolo.example.com"));
+	let ip_config = IpConfig {
+		defaultVersion: IP_V6,
+		supportedVersions: IP_V4 | IP_V6
+	};
+	let s = db.get_server_ip(0, db.get_server(&q), &ip_config);*/
 	
 	let mut args = env::args().skip(1);
 	let mut infile : Option<String> = None;
@@ -291,6 +361,7 @@ fn main() {
 		writer.write(&buf).expect("Write failure");
 		writer.write(client.inbuf.as_ref()).expect("Write failure");
 	};
+
 
 	let mut masswhois : MassWhois = MassWhois::new(concurrency, &mut reader, &mut print_result);
 	masswhois.servers = servers;
