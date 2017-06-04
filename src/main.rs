@@ -53,6 +53,27 @@ impl WhoisQuery {
 	}
 }
 
+impl ToString for WhoisQuery {
+	fn to_string(&self) -> String {
+		match *self {
+			WhoisQuery::Domain(ref x) => {
+				let mut result = String::from("domain ");
+				result.push_str(x.as_str());
+				result
+			},
+			WhoisQuery::IpAddr(x) => {
+				x.to_string()
+			},
+			WhoisQuery::AS(x) => {
+				x.to_string()
+			},
+			WhoisQuery::Unspecified(ref x) => {
+				x.clone()
+			}
+		}
+	}
+}
+
 struct WhoisClient {
 	stream: TcpStream,
 	token : Token,
@@ -184,14 +205,15 @@ struct MassWhois<'a> {
 	end_reached : bool,
 	poll : Poll,
 	events : Events,
-	reader : &'a mut BufRead,
 	db : WhoisDatabase,
-	callback : &'a mut FnMut(&mut WhoisClient)
+	callback : &'a mut FnMut(&mut WhoisClient),
+	next_query: &'a mut FnMut() -> Option<WhoisQuery>
 }
 
 impl<'a> MassWhois<'a> {
 	
-	fn new(concurrency : usize, reader : &'a mut BufRead, cb: &'a mut FnMut(&mut WhoisClient)) -> Self {
+	fn new(concurrency : usize, next_query: &'a mut FnMut() -> Option<WhoisQuery>, cb: &'a mut FnMut(&mut WhoisClient)) -> Self
+	{
 		let poll = Poll::new().expect("Failed to create polling interface.");
 		let result = MassWhois {
 			concurrency: concurrency,
@@ -200,14 +222,13 @@ impl<'a> MassWhois<'a> {
 			end_reached: Default::default(),
 			poll: poll,
 			events: Events::with_capacity(concurrency),
-			reader: reader,
-			//writer: writer,
 			running: 0,
 			db: WhoisDatabase {
 				domain_servers: Default::default(),
 				server_ips: Default::default()
 			},
-			callback: cb
+			callback: cb,
+			next_query: next_query
 		};
 		result
 	}
@@ -266,19 +287,18 @@ impl<'a> MassWhois<'a> {
 				break;
 			}
 		}
-		//self.writer.flush().expect("Failed to flush output file.");
 	}
 
 	fn next_client(&mut self, i : usize, initial : bool) {
-		let mut line : String = Default::default();
-		let line_result = self.reader.read_line(&mut line);
 		if !initial {
 			self.running = self.running - 1;
 		}
-		if line_result.expect("Failed to read line.") <= 0 {
+		let mut line = (self.next_query)();
+		if line.is_none() {
 			self.end_reached = true;
 			return;
 		}
+		let mut line = line.unwrap().to_string();
 		self.running = self.running + 1;
 		let client : WhoisClient = WhoisClient::new(i, line, Some(self.servers[i % self.servers.len()]));
 		self.poll.register(&client.stream, client.token, Ready::readable() | Ready::writable() | UnixReady::hup() | UnixReady::error(), PollOpt::edge()).expect("Failed to register poll.");
@@ -361,9 +381,16 @@ fn main() {
 		writer.write(&buf).expect("Write failure");
 		writer.write(client.inbuf.as_ref()).expect("Write failure");
 	};
+	let mut next_query = || {
+		let mut line : String = Default::default();
+		if reader.read_line(&mut line).expect("Failed to read line") <= 0 {
+			return None;
+		}
+		return Some(WhoisQuery::new(line));
+	};
 
 
-	let mut masswhois : MassWhois = MassWhois::new(concurrency, &mut reader, &mut print_result);
+	let mut masswhois : MassWhois = MassWhois::new(concurrency, &mut next_query, &mut print_result);
 	masswhois.servers = servers;
 	masswhois.start();
 }
