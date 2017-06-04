@@ -18,3 +18,4 @@ Support is highly wanted.
 - Implement query type detection
 - Improve Rust-specific coding style (see TODOs)
 - Implement timeouts
+- Implement display/statistics
