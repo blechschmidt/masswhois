@@ -9,7 +9,7 @@ use std::env;
 use mio::{Token, Poll, Ready, PollOpt, Events};
 use mio::tcp::TcpStream;
 use std::str::FromStr;
-use std::net::{Ipv4Addr, Ipv6Addr, IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::io;
 use std::io::{BufReader, BufRead, Write, BufWriter};
 use std::fs::File;
@@ -17,6 +17,10 @@ use netbuf::Buf;
 use mio::unix::UnixReady;
 use byteorder::ByteOrder;
 use std::collections::HashMap;
+
+static SERVER_ARIN: &'static str = "whois.arin.net";
+static SERVER_VERISIGN: &'static str = "whois.verisign-grs.com";
+static SERVER_IANA: &'static str = "whois.iana.org";
 
 enum WhoisQuery {
 	Domain(String),
@@ -26,30 +30,59 @@ enum WhoisQuery {
 }
 
 bitflags! {
-	struct IpSupport: u8 {
+	struct IpVersion: u8 {
 		const IP_V4 = 1;
 		const IP_V6 = 2;
 	}
 }
 
 struct IpConfig {
-	defaultVersion: IpSupport,
-	supportedVersions: IpSupport
+	default_version: IpVersion,
+	supported_versions: IpVersion
 }
 
 impl WhoisQuery {
-	fn new(query : String) -> WhoisQuery {
-		let ip = IpAddr::from_str(query.as_str());
-		if ip.is_ok() {
-			WhoisQuery::IpAddr(ip.unwrap())
+	fn new(query : String, unspecified : bool) -> WhoisQuery {
+		if unspecified {
+			WhoisQuery::Unspecified(query)
 		} else {
-			let asn = query.parse::<u32>();
-			if asn.is_ok() {
-				WhoisQuery::AS(asn.unwrap())
+			let ip = IpAddr::from_str(query.as_str());
+			if ip.is_ok() {
+				WhoisQuery::IpAddr(ip.unwrap())
 			} else {
-				WhoisQuery::Domain(query)
+				let asn = query.parse::<u32>();
+				if asn.is_ok() {
+					WhoisQuery::AS(asn.unwrap())
+				} else {
+					WhoisQuery::Domain(query)
+				}
 			}
 		}
+	}
+
+	// Some servers do not automatically recognize the input type
+	// We have to help them by mapping server name to query
+	fn construct_query(&self, server : &str) -> String {
+		 match *self {
+			 WhoisQuery::Domain(ref domain) => {
+				let mut result = if server == SERVER_VERISIGN {
+					String::from("domain ")
+				} else {
+					String::from("")
+				};
+				result.push_str(domain.as_str());
+				result
+			 },
+			 WhoisQuery::IpAddr(addr) => {
+				 addr.to_string()
+			 },
+			 WhoisQuery::AS(asn) => {
+				 asn.to_string()
+			 },
+			 WhoisQuery::Unspecified(ref unspec) => {
+				 unspec.clone()
+			 }
+		 }
 	}
 }
 
@@ -57,9 +90,7 @@ impl ToString for WhoisQuery {
 	fn to_string(&self) -> String {
 		match *self {
 			WhoisQuery::Domain(ref x) => {
-				let mut result = String::from("domain ");
-				result.push_str(x.as_str());
-				result
+				x.clone()
 			},
 			WhoisQuery::IpAddr(x) => {
 				x.to_string()
@@ -103,17 +134,17 @@ impl WhoisClient {
 
 struct WhoisDatabase {
 	domain_servers : HashMap<String, String>, // map domain to whois server
-	server_ips : HashMap<String, (Vec<Ipv4Addr>, Vec<Ipv6Addr>)> // map whois server name to addresses
+	server_ips : HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
 }
 
 impl WhoisDatabase {
-	fn new(domain_server_file: &String, server_ip_file: &String) -> WhoisDatabase {
-		let mut result = WhoisDatabase {
+	fn new() -> WhoisDatabase {
+		let result = WhoisDatabase {
 			domain_servers: Default::default(),
 			server_ips: Default::default()
 		};
-		result.read_domain_servers(domain_server_file);
-		result.read_server_ips(server_ip_file);
+		//result.read_domain_servers(domain_server_file);
+		//result.read_server_ips(server_ip_file);
 		result
 	}
 
@@ -133,7 +164,7 @@ impl WhoisDatabase {
 		}
 	}
 	
-	fn read_server_ips(&mut self, filename : &String) {
+	fn read_server_ips(&mut self, filename : &String, ip_config : &IpConfig) {
 		let reader = BufReader::new(File::open(filename).unwrap());
 		for l in reader.lines() {
 			let trimmed : String = String::from(l.unwrap());
@@ -142,36 +173,47 @@ impl WhoisDatabase {
 			}
 			let mut fields = trimmed.split_whitespace();
 			let server = String::from(fields.next().unwrap()).to_lowercase();
-			let mut ip4_addrs : Vec<Ipv4Addr> = Default::default();
-			let mut ip6_addrs : Vec<Ipv6Addr> = Default::default();
+			let mut ip4_addrs : Vec<IpAddr> = Default::default();
+			let mut ip6_addrs : Vec<IpAddr> = Default::default();
+			let mut ip_addrs : Vec<IpAddr> = Default::default();
 			for ip_str in fields {
 				let ip = IpAddr::from_str(ip_str).unwrap();
 				match ip {
-					IpAddr::V4(addr) => ip4_addrs.push(addr),
-					IpAddr::V6(addr) => ip6_addrs.push(addr)
+					IpAddr::V4(addr) => ip4_addrs.push(IpAddr::V4(addr)),
+					IpAddr::V6(addr) => ip6_addrs.push(IpAddr::V6(addr))
 				}
 			}
-			self.server_ips.insert(server, (ip4_addrs, ip6_addrs));
+			if ip_config.default_version == IP_V4 {
+				ip_addrs.append(&mut ip4_addrs);
+				if !(ip_config.supported_versions & IP_V6).is_empty() {
+					ip_addrs.append(&mut ip6_addrs);
+				}
+			} else if ip_config.default_version == IP_V6 {
+				ip_addrs.append(&mut ip6_addrs);
+				if !(ip_config.supported_versions & IP_V4).is_empty() {
+					ip_addrs.append(&mut ip4_addrs);
+				}
+			}
+			self.server_ips.insert(server, ip_addrs);
 		}
 	}
 
-	fn get_server<'a>(&'a self, query : &'a WhoisQuery) -> Option<&'a String> {
+	fn get_server<'a>(&'a self, query : &'a WhoisQuery) -> Option<&'a str> {
 		match *query {
-			WhoisQuery::Domain(ref x) => 
-			{
-				let full = self.domain_servers.get(x);
-				if full.is_some() {
-					return full;
-				}
+			WhoisQuery::Domain(ref x) => {
+				let mut is_tld = true;
 				for (pos, ch) in x.char_indices() {
 					if ch == '.' {
+						is_tld = false;
 						let part = &x.as_str()[pos + 1..];
-						println!("{}", part);
 						let result = self.domain_servers.get(&String::from(part));
 						if result.is_some() {
-							return result;
+							return Some(result.unwrap().as_str());
 						}
 					}
+				}
+				if is_tld {
+					return Some(SERVER_IANA);
 				}
 				None
 			}
@@ -180,16 +222,19 @@ impl WhoisDatabase {
 		}
 	}
 
-	fn get_server_ip<'a>(&'a self, try: usize, server: Option<&'a String>, ip_conf: &IpConfig) -> Option<IpAddr> {
+	fn get_server_ip<'a>(&'a self, try: usize, server: Option<&'a str>) -> Option<IpAddr> {
 		if server.is_none() {
 			None
 		} else{
-			let server_str = server.unwrap();
-			let ips = self.server_ips.get(server_str);
+			let server_str = String::from(server.unwrap());
+			let ips = self.server_ips.get(&server_str);
 			if ips.is_some() {
-				let &(ref ip4, ref ip6) = ips.unwrap();
-				// TODO: Use ip_config and try
-				return Some(IpAddr::V4(ip4[0]));
+				let ips = ips.unwrap();
+				if ips.len() > 0 {
+					return Some(ips[try % ips.len()]);
+				} else {
+					return None;
+				}
 			}
 			None
 		}
@@ -207,13 +252,14 @@ struct MassWhois<'a> {
 	events : Events,
 	db : WhoisDatabase,
 	callback : &'a mut FnMut(&mut WhoisClient),
-	next_query: &'a mut FnMut() -> Option<WhoisQuery>
+	next_query: &'a mut FnMut() -> Option<WhoisQuery>,
+	infer_servers : bool,
+	ip_config : IpConfig
 }
 
 impl<'a> MassWhois<'a> {
 	
-	fn new(concurrency : usize, next_query: &'a mut FnMut() -> Option<WhoisQuery>, cb: &'a mut FnMut(&mut WhoisClient)) -> Self
-	{
+	fn new(concurrency : usize, ip_config: IpConfig, infer_servers : bool, next_query: &'a mut FnMut() -> Option<WhoisQuery>, cb: &'a mut FnMut(&mut WhoisClient)) -> Self {
 		let poll = Poll::new().expect("Failed to create polling interface.");
 		let result = MassWhois {
 			concurrency: concurrency,
@@ -223,12 +269,11 @@ impl<'a> MassWhois<'a> {
 			poll: poll,
 			events: Events::with_capacity(concurrency),
 			running: 0,
-			db: WhoisDatabase {
-				domain_servers: Default::default(),
-				server_ips: Default::default()
-			},
+			db: WhoisDatabase::new(),
 			callback: cb,
-			next_query: next_query
+			next_query: next_query,
+			infer_servers: infer_servers,
+			ip_config: ip_config
 		};
 		result
 	}
@@ -261,7 +306,6 @@ impl<'a> MassWhois<'a> {
 								client.inbuf.read_from::<TcpStream>(stream).expect("Failed to read.");
 							}
 							if UnixReady::from(event.readiness()).is_hup() {
-							
 								(self.callback)(client);
 								if !client.terminated {
 									client.terminated = true;
@@ -293,14 +337,35 @@ impl<'a> MassWhois<'a> {
 		if !initial {
 			self.running = self.running - 1;
 		}
-		let mut line = (self.next_query)();
-		if line.is_none() {
+		let query = (self.next_query)();
+		if query.is_none() {
 			self.end_reached = true;
 			return;
 		}
-		let mut line = line.unwrap().to_string();
+
+		let query = query.unwrap();
+		let mut server_name = None;
+		let mut server = if self.infer_servers {
+			server_name = self.db.get_server(&query);
+			self.db.get_server_ip(0, server_name)
+		} else {
+			None
+		};
+		if !self.infer_servers || server.is_none() {
+			if self.servers.len() > 0 {
+				server = Some(self.servers[i % self.servers.len()])
+			} else {
+				server = None
+			}
+		};
+		let query_str = if server_name.is_some() {
+			query.construct_query(server_name.unwrap())
+		} else {
+			query.to_string()
+		};
+
 		self.running = self.running + 1;
-		let client : WhoisClient = WhoisClient::new(i, line, Some(self.servers[i % self.servers.len()]));
+		let client : WhoisClient = WhoisClient::new(i, query_str, server);
 		self.poll.register(&client.stream, client.token, Ready::readable() | Ready::writable() | UnixReady::hup() | UnixReady::error(), PollOpt::edge()).expect("Failed to register poll.");
 		if initial {
 			self.clients.push(client);
@@ -317,25 +382,22 @@ impl<'a> MassWhois<'a> {
 
 
 fn main() {
-	/*let db = WhoisDatabase::new(&String::from("data/domain_servers.txt"), &String::from("data/server_ip.txt"));
-	let q = WhoisQuery::Domain(String::from("yolo.example.com"));
-	let ip_config = IpConfig {
-		defaultVersion: IP_V6,
-		supportedVersions: IP_V4 | IP_V6
-	};
-	let s = db.get_server_ip(0, db.get_server(&q), &ip_config);*/
 	
 	let mut args = env::args().skip(1);
 	let mut infile : Option<String> = None;
 	let mut outfile : Option<String> = None;
 	let mut servers : Vec<IpAddr> = Default::default();
 	let mut concurrency : usize = 5;
+	let mut ip_config = IpConfig {
+		supported_versions: IP_V4,
+		default_version: IP_V4
+	};
 	loop {
 		match args.next() {
 			Some(x) => match x.as_ref() {
 				"-s" | "--server" => {
 					let ip_str = args.next().expect("Missing server argument.");
-					let ip_addr = IpAddr::from_str(ip_str.as_ref()).expect("Invalid server argument.");
+					let ip_addr = IpAddr::from_str(ip_str.as_ref()).expect("Invalid server argument. Must be an IP address.");
 					servers.push(ip_addr)
 				},
 				"-c" | "--concurrency" => {
@@ -347,6 +409,39 @@ fn main() {
 						panic!("Invalid parameter.");
 					}
 					outfile = Some(args.next().expect("Missing outfile."));
+				},
+				"--ip" => {
+					let ip_str = args.next().expect("Missing ip argument.").replace(" ", "");
+					// TODO: Use string splitting instead of matching.
+					ip_config = match ip_str.as_ref() {
+						"4" => {
+							IpConfig {
+								supported_versions: IP_V4,
+								default_version: IP_V4
+							}
+						},
+						"6" => {
+							IpConfig {
+								supported_versions: IP_V6,
+								default_version: IP_V6
+							}
+						},
+						"4,6" => {
+							IpConfig {
+								supported_versions: IP_V4 | IP_V6,
+								default_version: IP_V4
+							}
+						},
+						"6,4" => {
+							IpConfig {
+								supported_versions: IP_V4 | IP_V6,
+								default_version: IP_V6
+							}
+						},
+						&_ => {
+							panic!("Invalid IP support argument.");
+						}
+					};
 				},
 				&_ => {
 					if infile.is_some() {
@@ -386,11 +481,12 @@ fn main() {
 		if reader.read_line(&mut line).expect("Failed to read line") <= 0 {
 			return None;
 		}
-		return Some(WhoisQuery::new(line));
+		let line = String::from(line.trim());
+		return Some(WhoisQuery::new(line, false));
 	};
 
-
-	let mut masswhois : MassWhois = MassWhois::new(concurrency, &mut next_query, &mut print_result);
-	masswhois.servers = servers;
+	let mut masswhois : MassWhois = MassWhois::new(concurrency, ip_config, true, &mut next_query, &mut print_result);
+	masswhois.db.read_domain_servers(&String::from("data/domain_servers.txt"));
+	masswhois.db.read_server_ips(&String::from("data/server_ip.txt"), &masswhois.ip_config);
 	masswhois.start();
 }
