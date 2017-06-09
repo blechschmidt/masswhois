@@ -251,15 +251,15 @@ struct MassWhois<'a> {
 	poll : Poll,
 	events : Events,
 	db : WhoisDatabase,
-	callback : &'a mut FnMut(&mut WhoisClient),
+	//callback : &'a mut FnMut(&mut WhoisClient),
 	next_query: &'a mut FnMut() -> Option<WhoisQuery>,
 	infer_servers : bool,
-	ip_config : IpConfig
+	ip_config : IpConfig,
+	output: Box<WhoisHandler>
 }
 
-impl<'a> MassWhois<'a> {
-	
-	fn new(concurrency : usize, ip_config: IpConfig, infer_servers : bool, next_query: &'a mut FnMut() -> Option<WhoisQuery>, cb: &'a mut FnMut(&mut WhoisClient)) -> Self {
+impl<'a> MassWhois<'a> {	
+	fn new(concurrency : usize, ip_config: IpConfig, infer_servers : bool, next_query: &'a mut FnMut() -> Option<WhoisQuery>, output: Box<WhoisHandler>) -> Self {
 		let poll = Poll::new().expect("Failed to create polling interface.");
 		let result = MassWhois {
 			concurrency: concurrency,
@@ -270,10 +270,11 @@ impl<'a> MassWhois<'a> {
 			events: Events::with_capacity(concurrency),
 			running: 0,
 			db: WhoisDatabase::new(),
-			callback: cb,
+			//callback: cb,
 			next_query: next_query,
 			infer_servers: infer_servers,
-			ip_config: ip_config
+			ip_config: ip_config,
+			output: output
 		};
 		result
 	}
@@ -306,7 +307,8 @@ impl<'a> MassWhois<'a> {
 								client.inbuf.read_from::<TcpStream>(stream).expect("Failed to read.");
 							}
 							if UnixReady::from(event.readiness()).is_hup() {
-								(self.callback)(client);
+								//(self.callback)(client);
+								self.output.handle(client);
 								if !client.terminated {
 									client.terminated = true;
 									// TODO: Find way to call self.next_client here directly
@@ -380,6 +382,40 @@ impl<'a> MassWhois<'a> {
 	}
 }
 
+trait WhoisHandler {
+	fn handle(&mut self, client: &mut WhoisClient);
+}
+
+struct WhoisOutputBinary {
+	writer: Box<Write>
+}
+
+impl WhoisHandler for WhoisOutputBinary {
+	fn handle(&mut self, client: &mut WhoisClient) {
+		let query_bytes = client.query.as_bytes();
+		let mut buf : [u8; 8] = [0; 8];
+		byteorder::LittleEndian::write_u64(&mut buf, query_bytes.len() as u64);
+		self.writer.write(&buf).expect("Write failure");
+		self.writer.write(query_bytes).expect("Write failure");
+		byteorder::LittleEndian::write_u64(&mut buf, client.inbuf.len() as u64);
+		self.writer.write(&buf).expect("Write failure");
+		self.writer.write(client.inbuf.as_ref()).expect("Write failure");
+	}
+}
+
+struct WhoisOutputReadable {
+	writer: Box<Write>
+}
+
+impl WhoisHandler for WhoisOutputReadable {
+	fn handle(&mut self, client: &mut WhoisClient) {
+		self.writer.write("----- ".as_bytes()).expect("Write failure");
+		self.writer.write(client.query.as_bytes()).expect("Write failure");
+		self.writer.write(" -----\n\n".as_bytes()).expect("Write failure");
+		self.writer.write(client.inbuf.as_ref()).expect("Write failure");
+		self.writer.write("\n\n".as_bytes()).expect("Write failure");
+	}
+}
 
 fn main() {
 	
@@ -392,6 +428,9 @@ fn main() {
 		supported_versions: IP_V4,
 		default_version: IP_V4
 	};
+	let mut infer_types = true;
+	let mut infer_servers = true;
+	let mut stdout = false;
 	loop {
 		match args.next() {
 			Some(x) => match x.as_ref() {
@@ -399,6 +438,12 @@ fn main() {
 					let ip_str = args.next().expect("Missing server argument.");
 					let ip_addr = IpAddr::from_str(ip_str.as_ref()).expect("Invalid server argument. Must be an IP address.");
 					servers.push(ip_addr)
+				},
+				"--no-infer-types" => {
+					infer_types = false;
+				},
+				"--no-infer-servers" => {
+					infer_servers = false;
 				},
 				"-c" | "--concurrency" => {
 					let concurrency_str = args.next().expect("Missing concurrency argument.");
@@ -460,32 +505,34 @@ fn main() {
 	} else {
 		Box::new(BufReader::new(File::open(infile.unwrap()).expect("Error opening file.")))
 	};
-	let mut writer : Box<Write> = if outfile == None || outfile == Some(String::from("-")) {
+	let writer : Box<Write> = if outfile == None || outfile == Some(String::from("-")) {
+		stdout = true;
 		Box::new(BufWriter::new(io::stdout()))
 	} else {
 		Box::new(BufWriter::new(File::create(outfile.unwrap()).expect("Error opening file.")))
 	};
 	
-	let mut print_result = |client : &mut WhoisClient|{
-		let query_bytes = client.query.as_bytes();
-		let mut buf : [u8; 8] = [0; 8];
-		byteorder::LittleEndian::write_u64(&mut buf, query_bytes.len() as u64);
-		writer.write(&buf).expect("Write failure");
-		writer.write(query_bytes).expect("Write failure");
-		byteorder::LittleEndian::write_u64(&mut buf, client.inbuf.len() as u64);
-		writer.write(&buf).expect("Write failure");
-		writer.write(client.inbuf.as_ref()).expect("Write failure");
+	let binary_output: Box<WhoisHandler> = if stdout {
+		Box::new(WhoisOutputReadable {
+			writer: writer
+		})
+	} else {
+		Box::new(WhoisOutputBinary {
+			writer: writer
+		})
+
 	};
+
 	let mut next_query = || {
 		let mut line : String = Default::default();
 		if reader.read_line(&mut line).expect("Failed to read line") <= 0 {
 			return None;
 		}
 		let line = String::from(line.trim());
-		return Some(WhoisQuery::new(line, false));
+		return Some(WhoisQuery::new(line, !infer_types));
 	};
 
-	let mut masswhois : MassWhois = MassWhois::new(concurrency, ip_config, true, &mut next_query, &mut print_result);
+	let mut masswhois : MassWhois = MassWhois::new(concurrency, ip_config, infer_servers, &mut next_query, binary_output);
 	masswhois.db.read_domain_servers(&String::from("data/domain_servers.txt"));
 	masswhois.db.read_server_ips(&String::from("data/server_ip.txt"), &masswhois.ip_config);
 	masswhois.start();
