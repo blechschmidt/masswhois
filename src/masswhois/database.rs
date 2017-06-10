@@ -12,8 +12,8 @@ static MAP_DOMAIN_SERVER: &'static str = include_str!("../../data/domain_servers
 static MAP_SERVER_IP: &'static str = include_str!("../../data/server_ip.txt");
 
 pub struct WhoisDatabase {
-    pub domain_servers : HashMap<String, String>, // map domain to whois server
-    pub server_ips : HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
+    pub domain_servers: HashMap<String, String>, // map domain to whois server
+    pub server_ips: HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
 }
 
 impl WhoisDatabase {
@@ -29,7 +29,7 @@ impl WhoisDatabase {
 
     fn read_domain_servers(&mut self) {
         for l in MAP_DOMAIN_SERVER.lines() {
-            let trimmed : String = String::from(l);
+            let trimmed: String = String::from(l);
             if trimmed == String::from("") || trimmed.starts_with("#") {
                 continue;
             }
@@ -42,17 +42,17 @@ impl WhoisDatabase {
         }
     }
 
-    fn read_server_ips(&mut self, ip_config : &IpConfig) {
+    fn read_server_ips(&mut self, ip_config: &IpConfig) {
         for l in MAP_SERVER_IP.lines() {
-            let trimmed : String = String::from(l);
+            let trimmed: String = String::from(l);
             if trimmed == String::from("") || trimmed.starts_with("#") {
                 continue;
             }
             let mut fields = trimmed.split_whitespace();
             let server = String::from(fields.next().unwrap()).to_lowercase();
-            let mut ip4_addrs : Vec<IpAddr> = Default::default();
-            let mut ip6_addrs : Vec<IpAddr> = Default::default();
-            let mut ip_addrs : Vec<IpAddr> = Default::default();
+            let mut ip4_addrs: Vec<IpAddr> = Default::default();
+            let mut ip6_addrs: Vec<IpAddr> = Default::default();
+            let mut ip_addrs: Vec<IpAddr> = Default::default();
             for ip_str in fields {
                 let ip = IpAddr::from_str(ip_str).unwrap();
                 match ip {
@@ -75,7 +75,7 @@ impl WhoisDatabase {
         }
     }
 
-    pub fn get_server<'a>(&'a self, query : &'a WhoisQuery) -> Option<&'a str> {
+    pub fn get_server<'a>(&'a self, query: &'a WhoisQuery) -> Option<&'a str> {
         match *query {
             WhoisQuery::Domain(ref x) => {
                 let mut is_tld = true;

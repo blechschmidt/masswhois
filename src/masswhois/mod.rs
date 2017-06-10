@@ -25,23 +25,23 @@ pub struct IpConfig {
 }
 
 pub struct MassWhois<'a> {
-    concurrency : usize, // Number of concurrent TCP connections
-    servers : Vec<IpAddr>,
+    concurrency: usize, // Number of concurrent TCP connections
+    servers: Vec<IpAddr>,
     running: usize,
     clients: Vec<WhoisClient>,
-    end_reached : bool,
-    poll : Poll,
-    events : Events,
-    pub db : WhoisDatabase,
-    //callback : &'a mut FnMut(&mut WhoisClient),
+    end_reached: bool,
+    poll: Poll,
+    events: Events,
+    pub db: WhoisDatabase,
+    //callback: &'a mut FnMut(&mut WhoisClient),
     next_query: &'a mut FnMut() -> Option<WhoisQuery>,
-    infer_servers : bool,
-    pub ip_config : IpConfig,
+    infer_servers: bool,
+    pub ip_config: IpConfig,
     output: Box<WhoisHandler>
 }
 
 impl<'a> MassWhois<'a> {
-    pub fn new(concurrency : usize, ip_config: IpConfig, infer_servers : bool, next_query: &'a mut FnMut() -> Option<WhoisQuery>, output: Box<WhoisHandler>) -> Self {
+    pub fn new(concurrency: usize, ip_config: IpConfig, infer_servers: bool, next_query: &'a mut FnMut() -> Option<WhoisQuery>, output: Box<WhoisHandler>) -> Self {
         let poll = Poll::new().expect("Failed to create polling interface.");
         let result = MassWhois {
             concurrency: concurrency,
@@ -77,7 +77,7 @@ impl<'a> MassWhois<'a> {
     fn handle_events(&mut self) {
         loop {
             self.poll.poll(&mut self.events, None).expect("Failed to poll.");
-            let mut terminated_clients : Vec<usize> = Default::default();
+            let mut terminated_clients: Vec<usize> = Default::default();
             for event in self.events.iter() {
                 match event.token() {
                     Token(i) => {
@@ -116,7 +116,7 @@ impl<'a> MassWhois<'a> {
         }
     }
 
-    fn next_client(&mut self, i : usize, initial : bool) {
+    fn next_client(&mut self, i: usize, initial: bool) {
         if !initial {
             self.running = self.running - 1;
         }
@@ -148,7 +148,7 @@ impl<'a> MassWhois<'a> {
         };
 
         self.running = self.running + 1;
-        let client : WhoisClient = WhoisClient::new(i, query_str, server);
+        let client: WhoisClient = WhoisClient::new(i, query_str, server);
         self.poll.register(&client.stream, client.token, Ready::readable() | Ready::writable() | UnixReady::hup() | UnixReady::error(), PollOpt::edge()).expect("Failed to register poll.");
         if initial {
             self.clients.push(client);

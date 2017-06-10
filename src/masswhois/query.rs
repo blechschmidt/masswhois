@@ -10,7 +10,7 @@ pub enum WhoisQuery {
 }
 
 impl WhoisQuery {
-    pub fn new(query : String, unspecified : bool) -> WhoisQuery {
+    pub fn new(query: String, unspecified: bool) -> WhoisQuery {
         if unspecified {
             WhoisQuery::Unspecified(query)
         } else {
@@ -30,7 +30,7 @@ impl WhoisQuery {
 
     // Some servers do not automatically recognize the input type
     // We have to help them by mapping server name to query
-    pub fn construct_query(&self, server : &str) -> String {
+    pub fn construct_query(&self, server: &str) -> String {
          match *self {
              WhoisQuery::Domain(ref domain) => {
                 let mut result = if server == SERVER_VERISIGN {
