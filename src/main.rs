@@ -132,7 +132,5 @@ fn main() {
 	};
 
 	let mut masswhois : MassWhois = MassWhois::new(concurrency, ip_config, infer_servers, &mut next_query, binary_output);
-	masswhois.db.read_domain_servers(&String::from("data/domain_servers.txt"));
-	masswhois.db.read_server_ips(&String::from("data/server_ip.txt"), &masswhois.ip_config);
 	masswhois.start();
 }

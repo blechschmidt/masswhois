@@ -1,6 +1,4 @@
 use std::net::IpAddr;
-use std::io::{BufRead, BufReader};
-use std::fs::File;
 use std::collections::HashMap;
 use std::str::FromStr;
 use masswhois::*;
@@ -10,24 +8,28 @@ pub static SERVER_ARIN: &'static str = "whois.arin.net";
 pub static SERVER_IANA: &'static str = "whois.iana.org";
 pub static SERVER_VERISIGN: &'static str = "whois.verisign-grs.com";
 
+static MAP_DOMAIN_SERVER: &'static str = include_str!("../../data/domain_servers.txt");
+static MAP_SERVER_IP: &'static str = include_str!("../../data/server_ip.txt");
+
 pub struct WhoisDatabase {
     pub domain_servers : HashMap<String, String>, // map domain to whois server
     pub server_ips : HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
 }
 
 impl WhoisDatabase {
-    pub fn new() -> WhoisDatabase {
-        let result = WhoisDatabase {
+    pub fn new(ip_config: &IpConfig) -> WhoisDatabase {
+        let mut result = WhoisDatabase {
             domain_servers: Default::default(),
             server_ips: Default::default()
         };
+        result.read_domain_servers();
+        result.read_server_ips(ip_config);
         result
     }
 
-    pub fn read_domain_servers(&mut self, filename : &String) {
-        let reader = BufReader::new(File::open(filename).unwrap());
-        for l in reader.lines() {
-            let trimmed : String = String::from(l.unwrap());
+    fn read_domain_servers(&mut self) {
+        for l in MAP_DOMAIN_SERVER.lines() {
+            let trimmed : String = String::from(l);
             if trimmed == String::from("") || trimmed.starts_with("#") {
                 continue;
             }
@@ -40,10 +42,9 @@ impl WhoisDatabase {
         }
     }
 
-    pub fn read_server_ips(&mut self, filename : &String, ip_config : &IpConfig) {
-        let reader = BufReader::new(File::open(filename).unwrap());
-        for l in reader.lines() {
-            let trimmed : String = String::from(l.unwrap());
+    fn read_server_ips(&mut self, ip_config : &IpConfig) {
+        for l in MAP_SERVER_IP.lines() {
+            let trimmed : String = String::from(l);
             if trimmed == String::from("") || trimmed.starts_with("#") {
                 continue;
             }
