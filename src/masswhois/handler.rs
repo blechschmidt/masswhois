@@ -2,9 +2,12 @@ extern crate byteorder;
 extern crate mio;
 extern crate netbuf;
 
-use std::io::Write;
+use std::io::{BufRead, Write};
 use byteorder::ByteOrder;
 use masswhois::client::*;
+use std::str::Lines;
+use std::collections::VecDeque;
+use std::str::FromStr;
 
 pub trait WhoisHandler {
     fn handle(&mut self, client: &mut WhoisClient);
@@ -38,5 +41,56 @@ impl WhoisHandler for WhoisOutputReadable {
         self.writer.write(" -----\n\n".as_bytes()).expect("Write failure");
         self.writer.write(client.inbuf.as_ref()).expect("Write failure");
         self.writer.write("\n\n".as_bytes()).expect("Write failure");
+    }
+}
+
+pub trait WhoisRawQuerySupplier {
+    fn get(&mut self) -> Option<String>;
+}
+
+pub struct WhoisRawQueryReader {
+    reader: Box<BufRead>
+}
+
+impl WhoisRawQueryReader {
+    pub fn new(reader: Box<BufRead>) -> Self {
+        Self {
+            reader: reader
+        }
+    }
+}
+
+impl WhoisRawQuerySupplier for WhoisRawQueryReader {
+    fn get(&mut self) -> Option<String> {
+        let mut line: String = Default::default();
+        if self.reader.read_line(&mut line).expect("Failed to read line") <= 0 {
+            return None;
+        }
+        let line = String::from(line.trim());
+        return Some(line);
+    }
+}
+
+pub struct WhoisRawQueryCmd {
+    lines: VecDeque<String>
+}
+
+impl WhoisRawQueryCmd {
+    pub fn new(string: String) -> Self {
+        let mut lines = VecDeque::new();
+
+        for line in string.lines() {
+            lines.push_back(String::from_str(line).unwrap());
+        }
+
+        Self {
+            lines: lines
+        }
+    }
+}
+
+impl WhoisRawQuerySupplier for WhoisRawQueryCmd {
+    fn get(&mut self) -> Option<String> {
+        return self.lines.pop_front();
     }
 }

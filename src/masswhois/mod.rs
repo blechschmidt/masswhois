@@ -43,7 +43,7 @@ pub struct MassWhois<'a> {
     events: Events,
     pub db: WhoisDatabase,
     //callback: &'a mut FnMut(&mut WhoisClient),
-    next_query: &'a mut FnMut() -> Option<String>,
+    next_query: Box<WhoisRawQuerySupplier>,
     infer_servers: bool,
     pub ip_config: IpConfig,
     output: Box<WhoisHandler>,
@@ -54,7 +54,7 @@ pub struct MassWhois<'a> {
 
 impl<'a> MassWhois<'a> {
 
-    pub fn new(concurrency: usize, ip_config: IpConfig, infer_servers: bool, next_query: &'a mut FnMut() -> Option<String>, output: Box<WhoisHandler>, infer: bool) -> Self {
+    pub fn new(concurrency: usize, ip_config: IpConfig, infer_servers: bool, next_query: Box<WhoisRawQuerySupplier>, output: Box<WhoisHandler>, infer: bool) -> Self {
         let poll = Poll::new().expect("Failed to create polling interface.");
         let mut result = MassWhois {
             concurrency: concurrency,
@@ -154,7 +154,7 @@ impl<'a> MassWhois<'a> {
             self.running = self.running - 1;
         }
         let orig_str = if status != Status::DNS {
-            (self.next_query)()
+            self.next_query.get()
         } else {
             Some(self.resolving_names[i].clone())
         };

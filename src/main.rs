@@ -17,7 +17,7 @@ use masswhois::*;
 use masswhois::query::*;
 use masswhois::handler::*;
 
-fn main() {    
+fn main() {
     let mut args = env::args().skip(1);
     let mut infile: Option<String> = None;
     let mut outfile: Option<String> = None;
@@ -30,6 +30,8 @@ fn main() {
     let mut infer_types = true;
     let mut infer_servers = true;
     let mut stdout = false;
+    let mut queries : Option<String> = None;
+
     loop {
         match args.next() {
             Some(x) => match x.as_ref() {
@@ -87,11 +89,20 @@ fn main() {
                         }
                     };
                 },
-                &_ => {
+                "-i" | "--infile" => {
                     if infile.is_some() {
                         panic!("Invalid parameter.");
                     }
-                    infile = Some(x);
+                    Some(args.next().expect("Missing infile."));
+                },
+                x => {
+                    if queries.is_none() {
+                        queries = Some(String::from_str(x).expect("String conversion failure."));
+                    }
+                    else {
+                        queries.as_mut().unwrap().push_str("\n");
+                        queries.as_mut().unwrap().push_str(x);
+                    }
                 }
             },
             None => {
@@ -110,7 +121,7 @@ fn main() {
     } else {
         Box::new(BufWriter::new(File::create(outfile.unwrap()).expect("Error opening file.")))
     };
-    
+
     let binary_output: Box<WhoisHandler> = if stdout {
         Box::new(WhoisOutputReadable {
             writer: writer
@@ -122,15 +133,11 @@ fn main() {
 
     };
 
-    let mut next_query = || {
-        let mut line: String = Default::default();
-        if reader.read_line(&mut line).expect("Failed to read line") <= 0 {
-            return None;
-        }
-        let line = String::from(line.trim());
-        return Some(line);
+    let r : Box<WhoisRawQuerySupplier> = match queries {
+        None => Box::new(WhoisRawQueryReader::new(reader)),
+        Some(q) => Box::new(WhoisRawQueryCmd::new(q))
     };
 
-    let mut masswhois: MassWhois = MassWhois::new(concurrency, ip_config, infer_servers, &mut next_query, binary_output, infer_types);
+    let mut masswhois: MassWhois = MassWhois::new(concurrency, ip_config, infer_servers, r, binary_output, infer_types);
     masswhois.start();
 }
