@@ -12,15 +12,15 @@ static MAP_DOMAIN_SERVER: &'static str = include_str!("../../data/domain_servers
 static MAP_SERVER_IP: &'static str = include_str!("../../data/server_ip.txt");
 
 pub struct WhoisDatabase {
-    pub domain_servers: HashMap<String, String>, // map domain to whois server
-    pub server_ips: HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
+    pub map_domain_servers: HashMap<String, String>, // map domain to whois server
+    pub map_server_ips: HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
 }
 
 impl WhoisDatabase {
     pub fn new(ip_config: &IpConfig) -> WhoisDatabase {
         let mut result = WhoisDatabase {
-            domain_servers: Default::default(),
-            server_ips: Default::default()
+            map_domain_servers: Default::default(),
+            map_server_ips: Default::default(),
         };
         result.read_domain_servers();
         result.read_server_ips(ip_config);
@@ -37,7 +37,7 @@ impl WhoisDatabase {
             let domain = String::from(fields.next().unwrap()).to_lowercase();
             let server = fields.next().map(|x| String::from(x).to_lowercase());
             if server.is_some() {
-                self.domain_servers.insert(domain, server.unwrap());
+                self.map_domain_servers.insert(domain, server.unwrap());
             }
         }
     }
@@ -71,7 +71,7 @@ impl WhoisDatabase {
                     ip_addrs.append(&mut ip4_addrs);
                 }
             }
-            self.server_ips.insert(server, ip_addrs);
+            self.map_server_ips.insert(server, ip_addrs);
         }
     }
 
@@ -83,7 +83,7 @@ impl WhoisDatabase {
                     if ch == '.' {
                         is_tld = false;
                         let part = &x.as_str()[pos + 1..];
-                        let result = self.domain_servers.get(&String::from(part));
+                        let result = self.map_domain_servers.get(&String::from(part));
                         if result.is_some() {
                             return Some(result.unwrap().as_str());
                         }
@@ -104,7 +104,7 @@ impl WhoisDatabase {
             None
         } else{
             let server_str = String::from(server.unwrap());
-            let ips = self.server_ips.get(&server_str);
+            let ips = self.map_server_ips.get(&server_str);
             if ips.is_some() {
                 let ips = ips.unwrap();
                 if ips.len() > 0 {

@@ -13,7 +13,8 @@ pub struct WhoisClient {
     pub query: String,
     pub inbuf: Buf,
     pub outbuf: Buf,
-    pub terminated: bool
+    pub terminated: bool,
+    pub dns_tries: usize
 }
 
 impl WhoisClient {
@@ -29,7 +30,8 @@ impl WhoisClient {
             inbuf: Buf::new(),
             outbuf: outbuf,
             query: query,
-            terminated: false
+            terminated: false,
+            dns_tries: 0
         }
     }
 }

@@ -5,6 +5,7 @@ extern crate byteorder;
 extern crate bitflags;
 
 pub mod masswhois;
+pub mod dnsutils;
 
 use std::env;
 use std::str::FromStr;
@@ -127,9 +128,9 @@ fn main() {
             return None;
         }
         let line = String::from(line.trim());
-        return Some(WhoisQuery::new(line, !infer_types));
+        return Some(line);
     };
 
-    let mut masswhois: MassWhois = MassWhois::new(concurrency, ip_config, infer_servers, &mut next_query, binary_output);
+    let mut masswhois: MassWhois = MassWhois::new(concurrency, ip_config, infer_servers, &mut next_query, binary_output, infer_types);
     masswhois.start();
 }
