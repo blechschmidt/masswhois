@@ -169,7 +169,6 @@ impl<'a, T: Copy> CachingResolver<'a, T> {
         if !qname.ends_with(".") {
             qname.push('.');
         }
-        println!("Query: {}", qname.clone());
         let cache_query = self.query_from_cache(&qname, RecordType::A, token, expect_response);
         let mut in_cache = true;
         match cache_query {
@@ -230,7 +229,6 @@ impl<'a, T: Copy> CachingResolver<'a, T> {
         }
 
         let mut res = self.resolving.remove(&(qname, qtype));
-        println!("New resolving size {}", self.resolving.len());
 
         for answer in msg.answers() {
             if answer.rr_type() != qtype {
@@ -268,8 +266,6 @@ impl<'a, T: Copy> CachingResolver<'a, T> {
     }*/
 
     fn query_from_cache(&mut self, qname: &String, qtype: RecordType, token: T, expect_response: bool) -> ResolvePromise<T> {
-        println!("Query from cache");
-        println!("Resolving size {}", self.resolving.len());
         /*let entry = self.resolving.entry(qname.clone());
         if let Entry::Vacant(_) = entry {
             return ResolvePromise::Resolving;
@@ -283,7 +279,6 @@ impl<'a, T: Copy> CachingResolver<'a, T> {
                 Some(&mut (ref mut list, _)) => {
                     if !expect_response {
                         list.push_back(token);
-                        println!("resolving1");
                         return ResolvePromise::Resolving;
                     }
                 },
@@ -332,7 +327,6 @@ impl<'a, T: Copy> CachingResolver<'a, T> {
         if was_none && nocache {
             let mut list = LinkedList::new();
             list.push_back(token);
-            println!("ins res");
             self.resolving.insert((qname.clone(), qtype), (list, 0));
         }
         return ResolvePromise::Resolving;
