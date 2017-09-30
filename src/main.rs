@@ -3,6 +3,8 @@ extern crate netbuf;
 extern crate byteorder;
 #[macro_use]
 extern crate bitflags;
+#[macro_use]
+extern crate indoc;
 
 pub mod masswhois;
 pub mod dnsutils;
@@ -16,9 +18,11 @@ use std::fs::File;
 use masswhois::*;
 use masswhois::query::*;
 use masswhois::handler::*;
+use std::process::exit;
 
 fn main() {
-    let mut args = env::args().skip(1);
+    let mut args = env::args();
+    let program = args.next();
     let mut infile: Option<String> = None;
     let mut outfile: Option<String> = None;
     let mut servers: Vec<IpAddr> = Default::default();
@@ -35,6 +39,22 @@ fn main() {
     loop {
         match args.next() {
             Some(x) => match x.as_ref() {
+                "-h" | "--help" => {
+                    let help = indoc!("\
+                    Usage: masswhois [OPTIONS] [OBJECT]...
+
+                    -c N       Number of concurrent lookups
+                    -s IP      Server IP address to use in case inference fails
+                               Can be specified multiple times
+                    -o FILE    File where binary output is written to
+                    -i FILE    Query objects from file instead of using command line arguments
+                    --ip 4,6   IP version support. Preferred version first
+
+                    --no-infer-types     Do not infer the query type
+                    --no-infer-servers   Do not infer the query server");
+                    println!("{}", help);
+                    exit(0);
+                },
                 "-s" | "--server" => {
                     let ip_str = args.next().expect("Missing server argument.");
                     let ip_addr = IpAddr::from_str(ip_str.as_ref()).expect("Invalid server argument. Must be an IP address.");
