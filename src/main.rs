@@ -133,7 +133,7 @@ fn main() {
 
     };
 
-    let r : Box<WhoisRawQuerySupplier> = match queries {
+    let r: Box<WhoisRawQuerySupplier> = match queries {
         None => Box::new(WhoisRawQueryReader::new(reader)),
         Some(q) => Box::new(WhoisRawQueryCmd::new(q))
     };

@@ -19,7 +19,8 @@ pub struct WhoisOutputBinary {
 
 impl WhoisHandler for WhoisOutputBinary {
     fn handle(&mut self, client: &mut WhoisClient) {
-        let query_bytes = client.query.as_bytes();
+        let query_str = client.query.to_string();
+        let query_bytes = query_str.as_bytes();
         let mut buf: [u8; 8] = [0; 8];
         byteorder::LittleEndian::write_u64(&mut buf, query_bytes.len() as u64);
         self.writer.write(&buf).expect("Write failure");
@@ -37,7 +38,7 @@ pub struct WhoisOutputReadable {
 impl WhoisHandler for WhoisOutputReadable {
     fn handle(&mut self, client: &mut WhoisClient) {
         self.writer.write("----- ".as_bytes()).expect("Write failure");
-        self.writer.write(client.query.as_bytes()).expect("Write failure");
+        self.writer.write(client.query.to_string().as_bytes()).expect("Write failure");
         self.writer.write(" -----\n\n".as_bytes()).expect("Write failure");
         self.writer.write(client.inbuf.as_ref()).expect("Write failure");
         self.writer.write("\n\n".as_bytes()).expect("Write failure");

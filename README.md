@@ -3,7 +3,7 @@ Single-threaded epoll-based concurrent whois client in Rust.
 
 ## Usage
 ```
-masswhois -c 10 queries.txt
+masswhois -c 10 -i queries.txt
 ```
 `-c` specifies the number of parallel connections to be opened at a time. `queries.txt` contains a list of domains to query for.
 

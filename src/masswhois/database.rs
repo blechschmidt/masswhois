@@ -10,10 +10,12 @@ pub static SERVER_VERISIGN: &'static str = "whois.verisign-grs.com";
 
 static MAP_DOMAIN_SERVER: &'static str = include_str!("../../data/domain_servers.txt");
 static MAP_SERVER_IP: &'static str = include_str!("../../data/server_ip.txt");
+static MAP_SERVER_QUERY: &'static str = include_str!("../../data/server_query.txt");
 
 pub struct WhoisDatabase {
     pub map_domain_servers: HashMap<String, String>, // map domain to whois server
     pub map_server_ips: HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
+    pub map_server_query: HashMap<String, (String, String)>
 }
 
 impl WhoisDatabase {
@@ -21,15 +23,33 @@ impl WhoisDatabase {
         let mut result = WhoisDatabase {
             map_domain_servers: Default::default(),
             map_server_ips: Default::default(),
+            map_server_query: Default::default()
         };
         result.read_domain_servers();
         result.read_server_ips(ip_config);
+        result.read_server_queries();
         result
+    }
+
+    fn read_server_queries(&mut self) {
+        for l in MAP_SERVER_QUERY.lines() {
+            let trimmed: String = String::from(l.trim());
+            if trimmed == String::from("") || trimmed.starts_with("#") {
+                continue;
+            }
+            let space_pos = trimmed.find(' ').unwrap();
+            let server: String = l.chars().take(space_pos).collect();
+            let rest: String = l.chars().skip(space_pos + 1).take(trimmed.len() - (space_pos + 1)).collect();
+            let domain_pos = rest.find("$object").unwrap();
+            let prefix: String = rest.chars().take(domain_pos).collect();
+            let mut suffix: String = rest.chars().skip(7).take(rest.len() - domain_pos - 7).collect();
+            self.map_server_query.insert(server, (prefix, suffix));
+        }
     }
 
     fn read_domain_servers(&mut self) {
         for l in MAP_DOMAIN_SERVER.lines() {
-            let trimmed: String = String::from(l);
+            let trimmed: String = String::from(l.trim());
             if trimmed == String::from("") || trimmed.starts_with("#") {
                 continue;
             }
@@ -44,7 +64,7 @@ impl WhoisDatabase {
 
     fn read_server_ips(&mut self, ip_config: &IpConfig) {
         for l in MAP_SERVER_IP.lines() {
-            let trimmed: String = String::from(l);
+            let trimmed: String = String::from(l.trim());
             if trimmed == String::from("") || trimmed.starts_with("#") {
                 continue;
             }
@@ -75,7 +95,7 @@ impl WhoisDatabase {
         }
     }
 
-    pub fn get_server<'a>(&'a self, query: &'a WhoisQuery) -> Option<&'a str> {
+    pub fn get_server(&self, query: &WhoisQuery) -> (Option<String>, String) {
         match *query {
             WhoisQuery::Domain(ref x) => {
                 let mut is_tld = true;
@@ -83,28 +103,40 @@ impl WhoisDatabase {
                     if ch == '.' {
                         is_tld = false;
                         let part = &x.as_str()[pos + 1..];
-                        let result = self.map_domain_servers.get(&String::from(part));
+                        let name = String::from(part);
+                        let result = self.map_domain_servers.get(&name);
                         if result.is_some() {
-                            return Some(result.unwrap().as_str());
+                            let server_name = result.unwrap();
+                            let server_query = self.map_server_query.get(server_name);
+                            if server_query.is_some() {
+                                let &(ref prefix, ref suffix) = server_query.unwrap();
+                                let mut query_string = prefix.clone();
+                                query_string += &query.to_string();
+                                query_string += &suffix;
+                                return (Some(server_name.clone()), query_string);
+                            }
+                            else {
+                                return (Some(server_name.clone()), query.to_string() + "\n");
+                            }
                         }
                     }
                 }
                 if is_tld {
-                    return Some(SERVER_IANA);
+                    return (Some(String::from(SERVER_IANA)), query.to_string() + "\n");
                 }
-                None
+                (None, query.to_string() + "\n")
             }
             // TODO: Implement other types
-            _ => None
+            _ => (None, query.to_string() + "\n")
         }
     }
 
-    pub fn get_server_ip<'a>(&'a self, try: usize, server: Option<&'a str>) -> Option<IpAddr> {
+    pub fn get_server_ip(&self, try: usize, server: Option<&String>) -> Option<IpAddr> {
         if server.is_none() {
             None
         } else{
-            let server_str = String::from(server.unwrap());
-            let ips = self.map_server_ips.get(&server_str);
+            let server_str = server.unwrap();
+            let ips = self.map_server_ips.get(server_str);
             if ips.is_some() {
                 let ips = ips.unwrap();
                 if ips.len() > 0 {

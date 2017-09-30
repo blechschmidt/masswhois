@@ -101,7 +101,7 @@ pub struct CachingResolver<'a, T> {
 impl<'a, T: Copy> CachingResolver<'a, T> {
     pub fn new(ip_config: IpConfig, capacity: usize, cache_capacity: usize,
                expiry_bucket_count: usize, expiry_bucket_secs: usize) -> Self {
-        let mut result = CachingResolver {
+        let mut result = Self {
             resolving: HashMap::with_capacity(capacity),
             encoding: HashMap::with_capacity(capacity),
             servers: Vec::new(),
@@ -369,7 +369,7 @@ pub struct Cache<TKey, TValue> {
 // TODO: Implement record expiry
 impl<TKey: Eq + Hash, TValue> Cache<TKey, TValue> {
     pub fn new(capacity: usize, expiry_bucket_count: usize, expiry_bucket_secs: usize) -> Self {
-        Cache {
+        Self {
             data: HashMap::with_capacity(capacity),
             expiry: ExpiryHandler::new(expiry_bucket_count, expiry_bucket_secs),
             value_capacity: 16

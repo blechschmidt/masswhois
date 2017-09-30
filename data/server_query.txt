@@ -1,0 +1,2 @@
+whois.denic.de -T dn,ace $object
+whois.verisign-grs.com domain $object

@@ -56,7 +56,7 @@ impl<'a> MassWhois<'a> {
 
     pub fn new(concurrency: usize, ip_config: IpConfig, infer_servers: bool, next_query: Box<WhoisRawQuerySupplier>, output: Box<WhoisHandler>, infer: bool) -> Self {
         let poll = Poll::new().expect("Failed to create polling interface.");
-        let mut result = MassWhois {
+        let mut result = Self {
             concurrency: concurrency,
             servers: Default::default(),
             clients: Vec::with_capacity(concurrency),
@@ -75,7 +75,7 @@ impl<'a> MassWhois<'a> {
         };
         for i in 0..concurrency {
             result.resolving_names.push(String::from(""));
-            result.clients.push(WhoisClient::new(i, String::from(""), Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))));
+            result.clients.push(WhoisClient::new(i, WhoisQuery::Unspecified(String::from("")), String::from(""), Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))));
         }
         result.resolver.add_to_poll(&mut result.poll, concurrency);
         result
@@ -167,9 +167,12 @@ impl<'a> MassWhois<'a> {
         let query = WhoisQuery::new(orig_str.clone(), !self.infer);
 
         let mut server_name = None;
+        let mut query_str = query.to_string();
         let mut server = if self.infer_servers {
-            server_name = self.db.get_server(&query);
-            self.db.get_server_ip(0, server_name)
+            let (name, tmp_str) = self.db.get_server(&query);
+            server_name = name;
+            query_str = tmp_str;
+            self.db.get_server_ip(0, server_name.as_ref())
         } else {
             None
         };
@@ -197,13 +200,13 @@ impl<'a> MassWhois<'a> {
             }
         };
 
-        let query_str = if server_name.is_some() {
-            query.construct_query(server_name.unwrap())
+        /*let query_str = if server_name.is_some() {
+            query.construct_query(server_name.unwrap(), &self.db)
         } else {
             query.to_string()
-        };
+        };*/
 
-        let client: WhoisClient = WhoisClient::new(i, query_str, server);
+        let client: WhoisClient = WhoisClient::new(i, query, query_str, server);
         let events = Ready::readable() | Ready::writable()| UnixReady::hup() | UnixReady::error();
         self.poll.register(&client.stream, client.token, events, PollOpt::edge())
             .expect("Failed to register poll.");
