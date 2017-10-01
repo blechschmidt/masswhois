@@ -1,0 +1,1 @@
+whois.verisign-grs.com Registrar WHOIS Server: ([0-9a-z._-]+)

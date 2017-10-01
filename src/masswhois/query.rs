@@ -2,6 +2,7 @@ use std::net::IpAddr;
 use std::str::FromStr;
 use masswhois::database::*;
 
+#[derive(Clone)]
 pub enum WhoisQuery {
     Domain(String),
     IpAddr(IpAddr),

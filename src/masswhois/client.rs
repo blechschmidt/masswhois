@@ -7,6 +7,7 @@ use netbuf::Buf;
 use std::net::{IpAddr, SocketAddr};
 use std::io::Write;
 use masswhois::query::WhoisQuery;
+use masswhois::Status;
 
 pub struct WhoisClient {
     pub stream: TcpStream,
@@ -17,11 +18,15 @@ pub struct WhoisClient {
     pub terminated: bool,
     pub dns_tries: usize,
     pub error: bool,
-    pub query: WhoisQuery
+    pub query: WhoisQuery,
+    pub referral_count: usize,
+    pub server: Option<String>,
+    pub address: Option<IpAddr>,
+    pub status: Status
 }
 
 impl WhoisClient {
-    pub fn new(concurrency_index: usize, query: WhoisQuery, query_str: String, address: Option<IpAddr>) -> Self {
+    pub fn new(concurrency_index: usize, query: WhoisQuery, query_str: String, address: Option<IpAddr>, server: Option<String>) -> Self {
         let addr  = SocketAddr::new(address.expect("Non-IP address not implemented."), 43);
         let stream = TcpStream::connect(&addr).expect("Failed to connect.");
         let mut outbuf = Buf::new();
@@ -36,7 +41,11 @@ impl WhoisClient {
             terminated: false,
             dns_tries: 0,
             error: false,
-            query: query
+            query: query,
+            referral_count: 0,
+            server: server,
+            address: address,
+            status: Status::Initial
         }
     }
 }

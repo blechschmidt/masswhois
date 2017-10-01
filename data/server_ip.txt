@@ -602,6 +602,5 @@ whois.ua 217.12.194.25 2a01:758:fffc:3::38 2a02:27a8:0:1::4 2a03:6300:1:27::132 
 whois.uniregistry.net 2620:57:4003::20 64.96.31.20
 whois.unitedtld.com 198.147.209.137 2620:115:3000:5002::137
 whois.verisign-grs.com 199.7.54.74 2001:502:be98:1000::74
-whois.verisign-grs.com 199.7.57.74 2001:503:e8ef:1000::74
 whois.voting.tld-box.at 2a02:850:7:9::91 83.136.35.91
 whois.website.ws 64.70.19.48

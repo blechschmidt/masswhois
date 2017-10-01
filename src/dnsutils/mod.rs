@@ -31,6 +31,8 @@ enum ExpiryRef<T> {
     Negative(Rc<T>)
 }
 
+static CNAME_CHAIN_LIMIT: usize = 16;
+
 impl<T> ExpiryRef<T> {
     pub fn get_rc(&self) -> Rc<T> {
         match self {
@@ -222,23 +224,57 @@ impl<'a, T: Copy> CachingResolver<'a, T> {
         if queries.len() != 1 {
             return;
         }
-        let qname = queries[0].name().to_string();
+        let qname = queries[0].name();
+        let qname_str = qname.to_string();
         let qtype = queries[0].query_type();
         if qtype != RecordType::A && qtype != RecordType::AAAA {
             return;
         }
 
-        let mut res = self.resolving.remove(&(qname, qtype));
+        let mut res = self.resolving.remove(&(qname_str, qtype));
+
+
+        // Flatten CNAME records which we are interested in (name from the question section)
+        let mut flatten = None;
+        let mut i: usize = 0;
+        let mut tname = qname;
+        'outer:while i < CNAME_CHAIN_LIMIT {
+            for answer in msg.answers() {
+                if answer.name() == tname {
+                    match answer.rdata() {
+                        &RData::CNAME(ref dst) => {
+                            tname = dst;
+                        }
+                        _ => {
+                            flatten = Some(tname);
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+            i += 1;
+        }
 
         for answer in msg.answers() {
             if answer.rr_type() != qtype {
                 continue;
             }
+
+            // If applicable, use the flattened name
+            let name = match flatten {
+                None => answer.name(),
+                Some(n) => if answer.name() == n {
+                    qname
+                } else {
+                    answer.name()
+                }
+            };
+
+
             if let (Some(ref mut cache4), &RData::A(ip4)) = (self.cache4.as_mut(), answer.rdata()) {
-                let name = answer.name().to_string();
-                cache4.insert(name, IpAddr::V4(ip4), Duration::from_secs(answer.ttl() as u64));
+                cache4.insert(name.to_string(), IpAddr::V4(ip4), Duration::from_secs(answer.ttl() as u64));
             } else if let (Some(ref mut cache6), &RData::AAAA(ip6)) = (self.cache6.as_mut(), answer.rdata()) {
-                cache6.insert(answer.name().to_string(), IpAddr::V6(ip6), Duration::from_secs(answer.ttl() as u64));
+                cache6.insert(name.to_string(), IpAddr::V6(ip6), Duration::from_secs(answer.ttl() as u64));
             }
         }
 

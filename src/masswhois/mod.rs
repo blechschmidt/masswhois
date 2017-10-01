@@ -14,6 +14,7 @@ use masswhois::client::*;
 use masswhois::handler::*;
 use dnsutils::*;
 use std::net::Ipv4Addr;
+use std::{thread, time};
 
 bitflags! {
     pub struct IpVersion: u8 {
@@ -28,9 +29,9 @@ pub struct IpConfig {
     pub supported_versions: IpVersion
 }
 
-#[derive(PartialEq, Eq)]
-enum Status {
-    Initial, DNS, Other
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+pub enum Status {
+    Initial, DNS, Referral, Other
 }
 
 pub struct MassWhois<'a> {
@@ -75,7 +76,11 @@ impl<'a> MassWhois<'a> {
         };
         for i in 0..concurrency {
             result.resolving_names.push(String::from(""));
-            result.clients.push(WhoisClient::new(i, WhoisQuery::Unspecified(String::from("")), String::from(""), Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))));
+            result.clients.push(WhoisClient::new(i,
+                                                 WhoisQuery::Unspecified(String::from("")),
+                                                 String::from(""),
+                                                 Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+                                                 Some(String::from(""))));
         }
         result.resolver.add_to_poll(&mut result.poll, concurrency);
         result
@@ -98,7 +103,7 @@ impl<'a> MassWhois<'a> {
     fn handle_events(&mut self) {
         loop {
             self.poll.poll(&mut self.events, None).expect("Failed to poll.");
-            let mut terminated_clients: Vec<usize> = Default::default();
+            let mut terminated_clients: Vec<(usize, Status)> = Default::default();
             let mut resolved : LinkedList<usize> = LinkedList::new();
             for event in self.events.iter() {
                 match event.token() {
@@ -115,8 +120,17 @@ impl<'a> MassWhois<'a> {
                                     self.output.handle(client);
                                     if !client.terminated {
                                         client.terminated = true;
+                                        let ref_server = self.db.get_referral_server(client);
+                                        let status = if ref_server.is_some() {
+                                            client.server = ref_server;
+                                            client.status = Status::Referral;
+                                            Status::Referral
+                                        } else {
+                                            Status::Other
+                                        };
+
                                         // TODO: Find way to call self.next_client here directly
-                                        terminated_clients.push(i);
+                                        terminated_clients.push((i, status));
                                     }
                                 }
                             } else if event.readiness().is_writable() {
@@ -135,8 +149,8 @@ impl<'a> MassWhois<'a> {
 
             // TODO: Find more performant solution than next_queue
             // (introduced due to borrowing issues when calling next_client within event loop)
-            for i in terminated_clients.iter() {
-                self.next_client(*i, Status::Other);
+            for c in terminated_clients.iter() {
+                self.next_client(c.0, c.1);
             }
 
             for tk in resolved.iter() {
@@ -153,44 +167,43 @@ impl<'a> MassWhois<'a> {
         if status != Status::Initial {
             self.running = self.running - 1;
         }
-        let orig_str = if status != Status::DNS {
-            self.next_query.get()
+        let orig_str = if status != Status::DNS && status != Status::Referral {
+            match self.next_query.get() {
+                None => {
+                    self.end_reached = true;
+                    return;
+                },
+                Some(s) => s
+            }
         } else {
-            Some(self.resolving_names[i].clone())
+            self.resolving_names[i].clone()
         };
-        if orig_str.is_none() {
-            self.end_reached = true;
-            return;
-        }
-        let orig_str = orig_str.unwrap();
 
         let query = WhoisQuery::new(orig_str.clone(), !self.infer);
 
-        let mut server_name = None;
-        let mut query_str = query.to_string();
-        let mut server = if self.infer_servers {
-            let (name, tmp_str) = self.db.get_server(&query);
-            server_name = name;
-            query_str = tmp_str;
-            self.db.get_server_ip(0, server_name.as_ref())
+        let mut server = None;
+        let (server_name, query_str) = if status != Status::Referral && self.clients[i].status != Status::Referral {
+            self.db.get_server(&query)
         } else {
-            None
+            (self.clients[i].server.clone(), query.to_string())
         };
+
         self.running = self.running + 1;
         if server_name.is_some() {
-            match self.resolver.query(String::from(server_name.unwrap()), i, status == Status::DNS) {
+            match self.resolver.query(String::from(server_name.clone().unwrap()), i, status == Status::DNS) {
                 ResolvePromise::Resolving => {
                     self.resolving_names[i] = orig_str;
                     return;
                 },
                 ResolvePromise::Resolved(_, None) => {
+                    // TODO: Handle properly
                     return;
                 },
                 ResolvePromise::Resolved(_, Some(ip)) => {
                     server = Some(ip);
+                    self.clients[i].status = Status::Initial;
                 }
             }
-
         }
         if !self.infer_servers || server.is_none() {
             if self.servers.len() > 0 {
@@ -201,13 +214,13 @@ impl<'a> MassWhois<'a> {
         };
 
         /*let query_str = if server_name.is_some() {
-            query.construct_query(server_name.unwrap(), &self.db)
-        } else {
-            query.to_string()
-        };*/
+        query.construct_query(server_name.unwrap(), &self.db)
+    } else {
+        query.to_string()
+    };*/
 
-        let client: WhoisClient = WhoisClient::new(i, query, query_str, server);
-        let events = Ready::readable() | Ready::writable()| UnixReady::hup() | UnixReady::error();
+        let client: WhoisClient = WhoisClient::new(i, query, query_str, server, server_name);
+        let events = Ready::readable() | Ready::writable() | UnixReady::hup() | UnixReady::error();
         self.poll.register(&client.stream, client.token, events, PollOpt::edge())
             .expect("Failed to register poll.");
         self.clients[i] = client;

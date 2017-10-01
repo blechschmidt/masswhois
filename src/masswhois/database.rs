@@ -1,8 +1,11 @@
 use std::net::IpAddr;
 use std::collections::HashMap;
+use std::str;
 use std::str::FromStr;
 use masswhois::*;
 use masswhois::query::*;
+extern crate regex;
+use self::regex::bytes::Regex;
 
 pub static SERVER_ARIN: &'static str = "whois.arin.net";
 pub static SERVER_IANA: &'static str = "whois.iana.org";
@@ -11,11 +14,13 @@ pub static SERVER_VERISIGN: &'static str = "whois.verisign-grs.com";
 static MAP_DOMAIN_SERVER: &'static str = include_str!("../../data/domain_servers.txt");
 static MAP_SERVER_IP: &'static str = include_str!("../../data/server_ip.txt");
 static MAP_SERVER_QUERY: &'static str = include_str!("../../data/server_query.txt");
+static MAP_SERVER_REFERRAL: &'static str = include_str!("../../data/server_referral.txt");
 
 pub struct WhoisDatabase {
     pub map_domain_servers: HashMap<String, String>, // map domain to whois server
     pub map_server_ips: HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
-    pub map_server_query: HashMap<String, (String, String)>
+    pub map_server_query: HashMap<String, (String, String)>,
+    pub map_server_referral: HashMap<String, Regex>
 }
 
 impl WhoisDatabase {
@@ -23,12 +28,61 @@ impl WhoisDatabase {
         let mut result = WhoisDatabase {
             map_domain_servers: Default::default(),
             map_server_ips: Default::default(),
-            map_server_query: Default::default()
+            map_server_query: Default::default(),
+            map_server_referral: Default::default()
         };
         result.read_domain_servers();
         result.read_server_ips(ip_config);
         result.read_server_queries();
+        result.read_server_referrals();
         result
+    }
+
+    pub fn get_referral_server(&mut self, client: &WhoisClient) -> Option<String> {
+        match client.server {
+            Some(ref s) => {
+                let result = self.map_server_referral.get(s);
+                match result {
+                    Some(regex) => {
+                        let data = client.inbuf.as_ref();
+                        let search = regex.captures(data);
+                        match search {
+                            Some(m) => {
+                                let capture = m.get(1);
+                                match capture {
+                                    Some(c) => {
+                                        let bytes = c.as_bytes().to_vec();
+                                        let referral_server = String::from_utf8(bytes);
+                                        match referral_server {
+                                            Ok(s) => Some(s),
+                                            _ => None
+                                        }
+                                    },
+                                    _ => None
+                                }
+                            },
+                            _ => None
+                        }
+                    },
+                    _ => None
+                }
+            }
+            _ => None
+        }
+    }
+
+    fn read_server_referrals(&mut self) {
+        for l in MAP_SERVER_REFERRAL.lines() {
+            let trimmed: String = String::from(l.trim());
+            if trimmed == String::from("") || trimmed.starts_with("#") {
+                continue;
+            }
+            let space_pos = trimmed.find(' ').unwrap();
+            let server: String = l.chars().take(space_pos).collect();
+            let rest: String = l.chars().skip(space_pos + 1).take(trimmed.len() - (space_pos + 1)).collect();
+            let expr = Regex::new(rest.as_str()).expect("Invalid regular expression.");
+            self.map_server_referral.insert(server, expr);
+        }
     }
 
     fn read_server_queries(&mut self) {
