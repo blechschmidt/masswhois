@@ -14,7 +14,6 @@ use masswhois::client::*;
 use masswhois::handler::*;
 use dnsutils::*;
 use std::net::Ipv4Addr;
-use std::{thread, time};
 
 bitflags! {
     pub struct IpVersion: u8 {
@@ -50,12 +49,13 @@ pub struct MassWhois<'a> {
     output: Box<WhoisHandler>,
     resolver: CachingResolver<'a, usize>,
     infer: bool,
-    resolving_names: Vec<String>
+    resolving_names: Vec<String>,
+    availability_check: bool
 }
 
 impl<'a> MassWhois<'a> {
 
-    pub fn new(concurrency: usize, ip_config: IpConfig, infer_servers: bool, next_query: Box<WhoisRawQuerySupplier>, output: Box<WhoisHandler>, infer: bool) -> Self {
+    pub fn new(concurrency: usize, ip_config: IpConfig, infer_servers: bool, next_query: Box<WhoisRawQuerySupplier>, output: Box<WhoisHandler>, infer: bool, availability_check: bool) -> Self {
         let poll = Poll::new().expect("Failed to create polling interface.");
         let mut result = Self {
             concurrency: concurrency,
@@ -72,7 +72,8 @@ impl<'a> MassWhois<'a> {
             output: output,
             resolver: CachingResolver::from_config(ip_config, 1000, 10000, 24 * 60, 60),
             infer: infer,
-            resolving_names: Vec::with_capacity(concurrency)
+            resolving_names: Vec::with_capacity(concurrency),
+            availability_check: availability_check
         };
         for i in 0..concurrency {
             result.resolving_names.push(String::from(""));
@@ -109,19 +110,21 @@ impl<'a> MassWhois<'a> {
                 match event.token() {
                     Token(i) => {
                         if i < self.concurrency {
-                            let ref mut client = self.clients[i];
+                            let ref mut client : WhoisClient = self.clients[i];
                             if event.readiness().is_readable() {
                                 {
                                     let ref mut stream = client.stream;
                                     client.inbuf.read_from::<TcpStream>(stream).expect("Failed to read.");
                                 }
                                 if UnixReady::from(event.readiness()).is_hup() {
-                                    //(self.callback)(client);
+                                    if self.availability_check {
+                                        client.availability = self.db.availability(client);
+                                    }
                                     self.output.handle(client);
                                     if !client.terminated {
                                         client.terminated = true;
                                         let ref_server = self.db.get_referral_server(client);
-                                        let status = if ref_server.is_some() {
+                                        let status = if ref_server.is_some() && !self.availability_check {
                                             client.server = ref_server;
                                             client.status = Status::Referral;
                                             Status::Referral
@@ -130,6 +133,7 @@ impl<'a> MassWhois<'a> {
                                         };
 
                                         // TODO: Find way to call self.next_client here directly
+                                        // Maybe use #inline macro?
                                         terminated_clients.push((i, status));
                                     }
                                 }
@@ -147,8 +151,6 @@ impl<'a> MassWhois<'a> {
                 }
             }
 
-            // TODO: Find more performant solution than next_queue
-            // (introduced due to borrowing issues when calling next_client within event loop)
             for c in terminated_clients.iter() {
                 self.next_client(c.0, c.1);
             }
@@ -212,12 +214,6 @@ impl<'a> MassWhois<'a> {
                 server = None
             }
         };
-
-        /*let query_str = if server_name.is_some() {
-        query.construct_query(server_name.unwrap(), &self.db)
-    } else {
-        query.to_string()
-    };*/
 
         let client: WhoisClient = WhoisClient::new(i, query, query_str, server, server_name);
         let events = Ready::readable() | Ready::writable() | UnixReady::hup() | UnixReady::error();

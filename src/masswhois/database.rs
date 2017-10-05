@@ -4,6 +4,7 @@ use std::str;
 use std::str::FromStr;
 use masswhois::*;
 use masswhois::query::*;
+use masswhois::client::{WhoisClient, Availability};
 extern crate regex;
 use self::regex::bytes::Regex;
 
@@ -15,12 +16,14 @@ static MAP_DOMAIN_SERVER: &'static str = include_str!("../../data/domain_servers
 static MAP_SERVER_IP: &'static str = include_str!("../../data/server_ip.txt");
 static MAP_SERVER_QUERY: &'static str = include_str!("../../data/server_query.txt");
 static MAP_SERVER_REFERRAL: &'static str = include_str!("../../data/server_referral.txt");
+static MAP_SERVER_AVAILABILITY: &'static str = include_str!("../../data/domain_availability.txt");
 
 pub struct WhoisDatabase {
     pub map_domain_servers: HashMap<String, String>, // map domain to whois server
     pub map_server_ips: HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
     pub map_server_query: HashMap<String, (String, String)>,
-    pub map_server_referral: HashMap<String, Regex>
+    pub map_server_referral: HashMap<String, Regex>,
+    pub general_availability: LinkedList<Regex>
 }
 
 impl WhoisDatabase {
@@ -29,12 +32,14 @@ impl WhoisDatabase {
             map_domain_servers: Default::default(),
             map_server_ips: Default::default(),
             map_server_query: Default::default(),
-            map_server_referral: Default::default()
+            map_server_referral: Default::default(),
+            general_availability: Default::default()
         };
         result.read_domain_servers();
         result.read_server_ips(ip_config);
         result.read_server_queries();
         result.read_server_referrals();
+        result.read_server_availability();
         result
     }
 
@@ -85,6 +90,27 @@ impl WhoisDatabase {
         }
     }
 
+    fn read_server_availability(&mut self) {
+        for l in MAP_SERVER_AVAILABILITY.lines() {
+            let trimmed: String = String::from(l.trim());
+            if trimmed == String::from("") || trimmed.starts_with("#") {
+                continue;
+            }
+            let expr = Regex::new(trimmed.as_str()).expect("Invalid regular expression.");
+            self.general_availability.push_back(expr);
+        }
+    }
+
+    pub fn availability(&self, client: &WhoisClient) -> Availability {
+        let data = client.inbuf.as_ref();
+        for r in self.general_availability.iter() {
+            if r.is_match(data) {
+                return Availability::AVAILABLE;
+            }
+        }
+        Availability::UNAVAILABLE
+    }
+
     fn read_server_queries(&mut self) {
         for l in MAP_SERVER_QUERY.lines() {
             let trimmed: String = String::from(l.trim());
@@ -96,7 +122,7 @@ impl WhoisDatabase {
             let rest: String = l.chars().skip(space_pos + 1).take(trimmed.len() - (space_pos + 1)).collect();
             let domain_pos = rest.find("$object").unwrap();
             let prefix: String = rest.chars().take(domain_pos).collect();
-            let mut suffix: String = rest.chars().skip(7).take(rest.len() - domain_pos - 7).collect();
+            let suffix: String = rest.chars().skip(7).take(rest.len() - domain_pos - 7).collect();
             self.map_server_query.insert(server, (prefix, suffix));
         }
     }

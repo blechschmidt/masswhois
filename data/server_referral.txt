@@ -1,1 +1,1 @@
-whois.verisign-grs.com Registrar WHOIS Server: ([0-9a-z._-]+)
+whois.verisign-grs.com \n\s*Registrar WHOIS Server: ([0-9a-z._-]+)

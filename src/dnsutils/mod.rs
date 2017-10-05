@@ -20,11 +20,8 @@ use self::trust_dns::rr::record_type::RecordType;
 use self::trust_dns::op::header::MessageType;
 use self::trust_dns::rr::record_data::RData;
 use std::marker::Copy;
-use self::trust_dns::serialize::binary::{BinEncoder, BinSerializable};
 use mio::{Poll, PollOpt, Token, Ready};
 use mio::net::UdpSocket;
-
-use std::io::prelude::*;
 
 enum ExpiryRef<T> {
     Positive(Rc<T>, usize),

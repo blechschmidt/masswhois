@@ -1,20 +1,27 @@
 # MassWhois
-Single-threaded epoll-based concurrent whois client in Rust.
+Single-threaded epoll-based concurrent bulk whois client in Rust.
 
 ## Usage
 ```
-masswhois -c 10 -i queries.txt
+Usage: masswhois [OPTIONS] [OBJECT]...
+
+-c N       Number of concurrent lookups
+-s IP      Server IP address to use in case inference fails
+           Can be specified multiple times
+-o FILE    File where binary output is written to
+-i FILE    Query objects from file instead of using command line arguments
+--ip 4,6   IP version support. Preferred version first
+
+--no-infer-types      Do not infer the query type
+--no-infer-servers    Do not infer the query server
+--check-availability  Perform a domain availability check only.
 ```
-`-c` specifies the number of parallel connections to be opened at a time. `queries.txt` contains a list of domains to query for.
 
 ## State of development
-Currently, MassWhois is very limited in its functionality. IP addresses of whois servers are still hardcoded only as DNS resolution is not yet implemented as it may not be blocking. Most servers for domain whois are recognized automatically already and the `-s` argument is no longer required, but referrals (such as for .com domains) are not supported yet.
+Currently, MassWhois is in an early stage of development and the only supported objects are domains.
 
 ### Todo
 Support is highly wanted.
-- Implement whois server referral support
-- Implement DNS name resolution of whois servers
-- Implement query type detection
 - Improve Rust-specific coding style (see TODOs)
 - Implement timeouts
 - Implement display/statistics

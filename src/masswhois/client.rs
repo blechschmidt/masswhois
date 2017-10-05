@@ -8,6 +8,21 @@ use std::net::{IpAddr, SocketAddr};
 use std::io::Write;
 use masswhois::query::WhoisQuery;
 use masswhois::Status;
+use std::string::ToString;
+
+pub enum Availability {
+    AVAILABLE, UNAVAILABLE, UNKNOWN
+}
+
+impl ToString for Availability {
+    fn to_string(&self) -> String {
+        match *self {
+            Availability::AVAILABLE => String::from("AVAILABLE"),
+            Availability::UNAVAILABLE => String::from("UNAVAILABLE"),
+            _ => String::from("UNKNOWN")
+        }
+    }
+}
 
 pub struct WhoisClient {
     pub stream: TcpStream,
@@ -22,7 +37,8 @@ pub struct WhoisClient {
     pub referral_count: usize,
     pub server: Option<String>,
     pub address: Option<IpAddr>,
-    pub status: Status
+    pub status: Status,
+    pub availability: Availability
 }
 
 impl WhoisClient {
@@ -45,7 +61,8 @@ impl WhoisClient {
             referral_count: 0,
             server: server,
             address: address,
-            status: Status::Initial
+            status: Status::Initial,
+            availability: Availability::UNKNOWN
         }
     }
 }

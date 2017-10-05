@@ -16,13 +16,11 @@ use std::io;
 use std::io::{BufReader, BufRead, Write, BufWriter};
 use std::fs::File;
 use masswhois::*;
-use masswhois::query::*;
 use masswhois::handler::*;
 use std::process::exit;
 
 fn main() {
-    let mut args = env::args();
-    let program = args.next();
+    let mut args = env::args().skip(1);
     let mut infile: Option<String> = None;
     let mut outfile: Option<String> = None;
     let mut servers: Vec<IpAddr> = Default::default();
@@ -33,6 +31,7 @@ fn main() {
     };
     let mut infer_types = true;
     let mut infer_servers = true;
+    let mut check_availability = false;
     let mut stdout = false;
     let mut queries : Option<String> = None;
 
@@ -50,8 +49,9 @@ fn main() {
                     -i FILE    Query objects from file instead of using command line arguments
                     --ip 4,6   IP version support. Preferred version first
 
-                    --no-infer-types     Do not infer the query type
-                    --no-infer-servers   Do not infer the query server");
+                    --no-infer-types      Do not infer the query type
+                    --no-infer-servers    Do not infer the query server
+                    --check-availability  Perform a domain availability check only.");
                     println!("{}", help);
                     exit(0);
                 },
@@ -65,6 +65,9 @@ fn main() {
                 },
                 "--no-infer-servers" => {
                     infer_servers = false;
+                },
+                "--check-availability" => {
+                    check_availability = true;
                 },
                 "-c" | "--concurrency" => {
                     let concurrency_str = args.next().expect("Missing concurrency argument.");
@@ -113,7 +116,7 @@ fn main() {
                     if infile.is_some() {
                         panic!("Invalid parameter.");
                     }
-                    Some(args.next().expect("Missing infile."));
+                    infile = Some(args.next().expect("Missing infile."));
                 },
                 x => {
                     if queries.is_none() {
@@ -130,7 +133,7 @@ fn main() {
             }
         }
     }
-    let mut reader: Box<BufRead> = if infile == None || infile == Some(String::from("-")) {
+    let reader: Box<BufRead> = if infile == None || infile == Some(String::from("-")) {
         Box::new(BufReader::new(io::stdin()))
     } else {
         Box::new(BufReader::new(File::open(infile.unwrap()).expect("Error opening file.")))
@@ -142,15 +145,14 @@ fn main() {
         Box::new(BufWriter::new(File::create(outfile.unwrap()).expect("Error opening file.")))
     };
 
-    let binary_output: Box<WhoisHandler> = if stdout {
-        Box::new(WhoisOutputReadable {
-            writer: writer
-        })
+    let binary_output: Box<WhoisHandler> = if !check_availability {
+        if stdout {
+            Box::new(WhoisOutputReadable { writer: writer })
+        } else {
+            Box::new(WhoisOutputBinary { writer: writer })
+        }
     } else {
-        Box::new(WhoisOutputBinary {
-            writer: writer
-        })
-
+        Box::new(WhoisOutputAvailability { writer: writer })
     };
 
     let r: Box<WhoisRawQuerySupplier> = match queries {
@@ -158,6 +160,6 @@ fn main() {
         Some(q) => Box::new(WhoisRawQueryCmd::new(q))
     };
 
-    let mut masswhois: MassWhois = MassWhois::new(concurrency, ip_config, infer_servers, r, binary_output, infer_types);
+    let mut masswhois: MassWhois = MassWhois::new(concurrency, ip_config, infer_servers, r, binary_output, infer_types, check_availability);
     masswhois.start();
 }

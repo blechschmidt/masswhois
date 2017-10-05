@@ -1,0 +1,8 @@
+(\n|^)\s*Status:\s+free\s*(\n|$)
+(\n|^)The queried object does not exist(\s|:|\n|$)
+(\n|^)No match for domain(\s|\n|$)
+(\n|^)No data found(\s|\n|$)
+(\n|^)(?:DOMAIN )?NOT FOUND(\s|\n|$)
+(\n|^)No match for\s
+(\n|^)Domain Status: No Object Found(\s|\n|$)
+(\n|^)Invalid query or domain name not known(\s|\n|$)

@@ -5,7 +5,6 @@ extern crate netbuf;
 use std::io::{BufRead, Write};
 use byteorder::ByteOrder;
 use masswhois::client::*;
-use std::str::Lines;
 use std::collections::VecDeque;
 use std::str::FromStr;
 
@@ -28,6 +27,18 @@ impl WhoisHandler for WhoisOutputBinary {
         byteorder::LittleEndian::write_u64(&mut buf, client.inbuf.len() as u64);
         self.writer.write(&buf).expect("Write failure");
         self.writer.write(client.inbuf.as_ref()).expect("Write failure");
+    }
+}
+
+pub struct WhoisOutputAvailability {
+    pub writer: Box<Write>
+}
+
+impl WhoisHandler for WhoisOutputAvailability {
+    fn handle(&mut self, client: &mut WhoisClient) {
+        let availability = client.availability.to_string();
+        let line: String = client.query.to_string() + " " + &availability + "\n";
+        self.writer.write(line.as_bytes()).expect("Write failure");
     }
 }
 
