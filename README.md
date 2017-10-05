@@ -17,6 +17,12 @@ Usage: masswhois [OPTIONS] [OBJECT]...
 --check-availability  Perform a domain availability check only.
 ```
 
+## Building
+MassWhois relies on [Cargo](https://crates.io/), the Rust package manager.
+It can be installed using `apt-get install cargo` on Debian-based systems.
+
+Run `cargo build --release` within the cloned folder. The resulting `masswhois` binary will be stored in `target/release/`.
+
 ## State of development
 Currently, MassWhois is in an early stage of development and the only supported objects are domains.
 
@@ -26,4 +32,5 @@ Support is highly wanted.
 - Implement timeouts
 - Implement display/statistics
 - Handle timeouts/network connectivity issues gracefully instead of panicking
+- Automatic IP version support detection
 - Testing
