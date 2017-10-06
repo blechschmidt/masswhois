@@ -199,33 +199,39 @@ impl<'a, T: Copy> CachingResolver<'a, T> {
         added
     }
 
-    pub fn receive(&mut self, token: usize, fun: &mut FnMut (T)) {
+    pub fn receive(&mut self, token: usize, fun: &mut FnMut (T)) -> bool {
         let mut recv;
         if Some(token) == self.epoll_start_token {
             recv = self.socket4.as_mut().unwrap().recv_from(&mut self.inbuf);
+            if recv.is_err() {
+                return false;
+            }
         } else if Some(token - 1) == self.epoll_start_token {
             recv = self.socket6.as_mut().unwrap().recv_from(&mut self.inbuf);
+            if recv.is_err() {
+                return false;
+            }
         } else {
-            return;
+            return true;
         }
         if recv.is_err() {
-            return;
+            return true;
         }
         let recv = recv.unwrap();
         let msg = Message::from_vec(&self.inbuf[0..recv.0]);
         if msg.is_err() {
-            return;
+            return true;
         }
         let msg = msg.unwrap();
         let queries = msg.queries();
         if queries.len() != 1 {
-            return;
+            return true;
         }
         let qname = queries[0].name();
         let qname_str = qname.to_string();
         let qtype = queries[0].query_type();
         if qtype != RecordType::A && qtype != RecordType::AAAA {
-            return;
+            return true;
         }
 
         let mut res = self.resolving.remove(&(qname_str, qtype));
@@ -277,7 +283,7 @@ impl<'a, T: Copy> CachingResolver<'a, T> {
 
         match res {
             None => {
-                return;
+                return true;
             },
             Some((ref mut list, _)) => {
                 'l: loop {
@@ -292,6 +298,7 @@ impl<'a, T: Copy> CachingResolver<'a, T> {
                 }
             }
         }
+        true
     }
 
     /*pub fn resolved((qname, qtype): (String, RecordType), fun: &'a mut FnMut()) -> Option<String, RecordType> {

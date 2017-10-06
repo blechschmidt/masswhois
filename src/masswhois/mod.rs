@@ -145,7 +145,11 @@ impl<'a> MassWhois<'a> {
                             let mut handle = |tk: usize| {
                                 resolved.push_back(tk);
                             };
-                            self.resolver.receive(i, &mut handle);
+                            loop {
+                                if !self.resolver.receive(i, &mut handle) {
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
