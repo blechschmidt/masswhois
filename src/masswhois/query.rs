@@ -1,6 +1,14 @@
 use std::net::IpAddr;
 use std::str::FromStr;
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum WhoisQueryType {
+    Domain = 1,
+    IpAddr,
+    AS,
+    Unspecified
+}
+
 #[derive(Clone)]
 pub enum WhoisQuery {
     Domain(String),
@@ -24,6 +32,23 @@ impl WhoisQuery {
                 } else {
                     WhoisQuery::Domain(query)
                 }
+            }
+        }
+    }
+
+    pub fn get_type(&self) -> WhoisQueryType {
+        match *self {
+            WhoisQuery::Domain(_) => {
+                WhoisQueryType::Domain
+            },
+            WhoisQuery::IpAddr(_) => {
+                WhoisQueryType::IpAddr
+            },
+            WhoisQuery::AS(_) => {
+                WhoisQueryType::AS
+            },
+            WhoisQuery::Unspecified(_) => {
+                WhoisQueryType::Unspecified
             }
         }
     }

@@ -1,6 +1,7 @@
 use std::net::IpAddr;
 use std::collections::HashMap;
 use std::str;
+use std::ops::Range;
 use std::str::FromStr;
 use masswhois::*;
 use masswhois::query::*;
@@ -17,13 +18,65 @@ static MAP_SERVER_IP: &'static str = include_str!("../../data/server_ip.txt");
 static MAP_SERVER_QUERY: &'static str = include_str!("../../data/server_query.txt");
 static MAP_SERVER_REFERRAL: &'static str = include_str!("../../data/server_referral.txt");
 static MAP_SERVER_AVAILABILITY: &'static str = include_str!("../../data/domain_availability.txt");
+static MAP_ASN_SERVER: &'static str = include_str!("../../data/asn_server.txt");
 
 pub struct WhoisDatabase {
     pub map_domain_servers: HashMap<String, String>, // map domain to whois server
     pub map_server_ips: HashMap<String, Vec<IpAddr>>, // map whois server name to addresses
-    pub map_server_query: HashMap<String, (String, String)>,
+    pub map_server_query: HashMap<(WhoisQueryType, String), (String, String)>,
     pub map_server_referral: HashMap<String, Regex>,
-    pub general_availability: LinkedList<Regex>
+    pub general_availability: LinkedList<Regex>,
+    pub asn_map: AsnMap
+}
+
+pub struct AsnMap {
+    table: Vec<(Range<usize>, String)>
+}
+
+impl AsnMap {
+    pub fn load() -> Self {
+        let mut map = AsnMap {
+            table: Default::default()
+        };
+
+        for l in MAP_ASN_SERVER.lines() {
+            let trimmed: String = String::from(l.trim());
+            if trimmed == String::from("") || trimmed.starts_with("#") {
+                continue;
+            }
+            let mut split = trimmed.split_whitespace();
+            let lower = split.next().unwrap().parse::<usize>().unwrap();
+            let upper = split.next().unwrap().parse::<usize>().unwrap();
+            let server = String::from(split.next().unwrap());
+            map.table.push((Range{start: lower, end: upper}, server));
+        }
+
+        map
+    }
+
+    pub fn find(&self, asn: usize) -> String {
+        let mut search = Range {
+            start: 0,
+            end: self.table.len()
+        };
+        loop {
+            let index = (search.start + search.end) / 2;
+            let result = self.table.get(index);
+            if result.is_none() || search.start >= search.end {
+                return String::from(SERVER_ARIN)
+            }
+            let tuple = result.unwrap();
+            if asn < tuple.0.start {
+                search.end = index - 1;
+            }
+            else if asn > tuple.0.end {
+                search.start = index + 1;
+            }
+            else {
+                return tuple.1.clone();
+            }
+        }
+    }
 }
 
 impl WhoisDatabase {
@@ -33,7 +86,8 @@ impl WhoisDatabase {
             map_server_ips: Default::default(),
             map_server_query: Default::default(),
             map_server_referral: Default::default(),
-            general_availability: Default::default()
+            general_availability: Default::default(),
+            asn_map: AsnMap::load()
         };
         result.read_domain_servers();
         result.read_server_ips(ip_config);
@@ -120,10 +174,16 @@ impl WhoisDatabase {
             let space_pos = trimmed.find(' ').unwrap();
             let server: String = l.chars().take(space_pos).collect();
             let rest: String = l.chars().skip(space_pos + 1).take(trimmed.len() - (space_pos + 1)).collect();
-            let domain_pos = rest.find("$object").unwrap();
-            let prefix: String = rest.chars().take(domain_pos).collect();
-            let suffix: String = rest.chars().skip(7).take(rest.len() - domain_pos - 7).collect();
-            self.map_server_query.insert(server, (prefix, suffix));
+            let domain_pos = rest.find("$domain");
+            let asn_pos = rest.find("$asn");
+            let (qtype, len, pos) = if domain_pos.is_some() {
+                (WhoisQueryType::Domain, 7, domain_pos.unwrap())
+            } else {
+                (WhoisQueryType::AS, 4, asn_pos.expect("Invalid line within server query file"))
+            };
+            let prefix: String = rest.chars().take(pos).collect();
+            let suffix: String = rest.chars().skip(len).take(rest.len() - pos - len).collect();
+            self.map_server_query.insert((qtype, server), (prefix, suffix));
         }
     }
 
@@ -187,7 +247,8 @@ impl WhoisDatabase {
                         let result = self.map_domain_servers.get(&name);
                         if result.is_some() {
                             let server_name = result.unwrap();
-                            let server_query = self.map_server_query.get(server_name);
+                            let q = (query.get_type(), server_name.clone());
+                            let server_query = self.map_server_query.get(&q);
                             if server_query.is_some() {
                                 let &(ref prefix, ref suffix) = server_query.unwrap();
                                 let mut query_string = prefix.clone();
@@ -205,7 +266,24 @@ impl WhoisDatabase {
                     return (Some(String::from(SERVER_IANA)), query.to_string() + "\n");
                 }
                 (None, query.to_string() + "\n")
-            }
+            },
+            WhoisQuery::AS(x) => {
+
+                let server_name = self.asn_map.find(x as usize);
+                
+                let q = (query.get_type(), server_name.clone());
+                let server_query = self.map_server_query.get(&q);
+                if server_query.is_some() {
+                    let &(ref prefix, ref suffix) = server_query.unwrap();
+                    let mut query_string = prefix.clone();
+                    query_string += &query.to_string();
+                    query_string += &suffix;
+                    return (Some(server_name.clone()), query_string);
+                }
+                    else {
+                        return (Some(server_name.clone()), query.to_string() + "\n");
+                    }
+            },
             // TODO: Implement other types
             _ => (None, query.to_string() + "\n")
         }

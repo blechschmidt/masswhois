@@ -1,2 +1,4 @@
-whois.denic.de -T dn,ace $object
-whois.verisign-grs.com domain $object
+whois.denic.de -T dn,ace $domain
+whois.verisign-grs.com domain $domain
+whois.arin.net a $asn
+whois.ripe.net -V Md5.2 AS$asn

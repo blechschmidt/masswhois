@@ -1,1 +1,2 @@
 whois.verisign-grs.com \n\s*Registrar WHOIS Server: ([0-9a-z._-]+)
+whois.arin.net \n\s*ReferralServer:\s+whois://([0-9a-z._-]+)

@@ -24,7 +24,7 @@ It can be installed using `apt-get install cargo` on Debian-based systems.
 Run `cargo build --release` within the cloned folder. The resulting `masswhois` binary will be stored in `target/release/`.
 
 ## State of development
-Currently, MassWhois is in an early stage of development and the only supported objects are domains.
+Currently, MassWhois is in an early stage of development and the only supported objects are domains and AS numbers.
 
 ### Todo
 Support is highly wanted.
