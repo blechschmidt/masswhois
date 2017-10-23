@@ -4,8 +4,6 @@
 # https://github.com/rfc1036/whois
 
 248     251     whois.ripe.net
-306     371     whois.nic.mil
-379     508     whois.nic.mil
 1101    1200    whois.ripe.net
 1267    1275    whois.ripe.net
 1877    1901    whois.ripe.net
@@ -19,9 +17,7 @@
 2830    2879    whois.ripe.net
 3154    3353    whois.ripe.net
 4608    4864    whois.apnic.net
-5120    5376    whois.nic.mil
 5377    5631    whois.ripe.net
-5800    6055    whois.nic.mil
 6656    6911    whois.ripe.net
 7467    7722    whois.apnic.net
 8192    9215    whois.ripe.net
@@ -90,6 +86,17 @@
 61952   62463   whois.ripe.net
 63488   64098   whois.apnic.net
 64099   64197   whois.lacnic.net
+131077  131086  whois.nic.ad.jp
+131092  131101  whois.nic.or.kr
+131152  131161  whois.nic.ad.jp
+131791  131890  whois.nic.or.kr
+131893  131992  whois.nic.ad.jp
+131072  196607  whois.apnic.net
+196608  262143  whois.ripe.net
+262144  327679  whois.lacnic.net
+327680  393215  whois.afrinic.net
+393216  458751  whois.arin.net
+4200000000 4294967294 whois.ripe.net
 
 # documentation and private ASN block
 64496   65534   whois.ripe.net

@@ -270,7 +270,7 @@ impl WhoisDatabase {
             WhoisQuery::AS(x) => {
 
                 let server_name = self.asn_map.find(x as usize);
-                
+
                 let q = (query.get_type(), server_name.clone());
                 let server_query = self.map_server_query.get(&q);
                 if server_query.is_some() {
@@ -280,9 +280,9 @@ impl WhoisDatabase {
                     query_string += &suffix;
                     return (Some(server_name.clone()), query_string);
                 }
-                    else {
-                        return (Some(server_name.clone()), query.to_string() + "\n");
-                    }
+                else {
+                    return (Some(server_name.clone()), query.to_string() + "\n");
+                }
             },
             // TODO: Implement other types
             _ => (None, query.to_string() + "\n")
