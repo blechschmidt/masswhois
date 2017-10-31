@@ -239,6 +239,40 @@ impl WhoisDatabase {
         }
     }
 
+    pub fn get_query(&self, query: &WhoisQuery, server: &String) -> String {
+        match *query {
+            WhoisQuery::Domain(_) => {
+                let q = (query.get_type(), server.clone());
+                let server_query = self.map_server_query.get(&q);
+                if server_query.is_some() {
+                    let &(ref prefix, ref suffix) = server_query.unwrap();
+                    let mut query_string = prefix.clone();
+                    query_string += &query.to_string();
+                    query_string += &suffix;
+                    query_string
+                }
+                else {
+                    query.to_string() + "\n"
+                }
+            },
+            WhoisQuery::AS(_) => {
+                let q = (query.get_type(), server.clone());
+                let server_query = self.map_server_query.get(&q);
+                if server_query.is_some() {
+                    let &(ref prefix, ref suffix) = server_query.unwrap();
+                    let mut query_string = prefix.clone();
+                    query_string += &query.to_string();
+                    query_string += &suffix;
+                    query_string
+                }
+                else {
+                    query.to_string() + "\n"
+                }
+            },
+            _ => query.to_string() + "\n"
+        }
+    }
+
     pub fn get_server(&self, query: &WhoisQuery) -> (Option<String>, String) {
         match *query {
             WhoisQuery::Domain(ref x) => {

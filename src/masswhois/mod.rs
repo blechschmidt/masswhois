@@ -191,7 +191,8 @@ impl<'a> MassWhois<'a> {
         let (server_name, query_str) = if status != Status::Referral && self.clients[i].status != Status::Referral {
             self.db.get_server(&query)
         } else {
-            (self.clients[i].server.clone(), query.to_string())
+            let whois_server = self.clients[i].server.clone().unwrap();
+            (self.clients[i].server.clone(), self.db.get_query(&query, &whois_server))
         };
 
         self.running = self.running + 1;
