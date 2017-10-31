@@ -2,3 +2,8 @@ whois.denic.de -T dn,ace $domain
 whois.verisign-grs.com domain $domain
 whois.arin.net a $asn
 whois.ripe.net -V Md5.2 AS$asn
+whois.nic.or.kr AS$asn
+whois.apnic.net AS$asn
+whois.afrinic.net AS$asn
+whois.lacnic.net AS$asn
+whois.nic.ad.jp AS $asn/e

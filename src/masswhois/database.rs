@@ -62,11 +62,15 @@ impl AsnMap {
         loop {
             let index = (search.start + search.end) / 2;
             let result = self.table.get(index);
-            if result.is_none() || search.start >= search.end {
-                return String::from(SERVER_ARIN)
+            if result.is_none() || search.start > search.end {
+                return String::from(SERVER_ARIN);
             }
             let tuple = result.unwrap();
             if asn < tuple.0.start {
+                if index == 0 {
+                    return String::from(SERVER_ARIN);
+                }
+
                 search.end = index - 1;
             }
             else if asn > tuple.0.end {
@@ -182,7 +186,7 @@ impl WhoisDatabase {
                 (WhoisQueryType::AS, 4, asn_pos.expect("Invalid line within server query file"))
             };
             let prefix: String = rest.chars().take(pos).collect();
-            let suffix: String = rest.chars().skip(len).take(rest.len() - pos - len).collect();
+            let suffix: String = rest.chars().skip(pos + len).take(rest.len() - pos - len).collect();
             self.map_server_query.insert((qtype, server), (prefix, suffix));
         }
     }

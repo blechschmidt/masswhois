@@ -86,6 +86,10 @@
 61952   62463   whois.ripe.net
 63488   64098   whois.apnic.net
 64099   64197   whois.lacnic.net
+
+# documentation and private ASN block
+64496   65534   whois.ripe.net
+
 131077  131086  whois.nic.ad.jp
 131092  131101  whois.nic.or.kr
 131152  131161  whois.nic.ad.jp
@@ -97,6 +101,3 @@
 327680  393215  whois.afrinic.net
 393216  458751  whois.arin.net
 4200000000 4294967294 whois.ripe.net
-
-# documentation and private ASN block
-64496   65534   whois.ripe.net
